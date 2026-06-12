@@ -31,6 +31,8 @@ if [ "$LANG_CODE" = "en" ]; then
   M_DONE="Setup complete! Restart Claude Code to start using it."
   M_USAGE="  /rag <content or URL>   — ingest into vector store"
   M_LOG="  Logs: tail -f /tmp/claude-local-rag.log"
+  M_MCP_HINT="  MCP integration — add to ~/.claude/settings.json:"
+  M_MCP_CFG='  { "mcpServers": { "rag": { "command": "python", "args": ["'"$SCRIPT_DIR"'/mcp_server.py"] } } }'
 else
   M_CHECK_DEPS="[1/5] 检查依赖..."
   M_NO_PYTHON="错误：未找到 python3，请先安装 Python 3.8+"
@@ -51,6 +53,8 @@ else
   M_DONE="安装完成！重启 Claude Code 后即可开箱即用。"
   M_USAGE="  /rag <内容或飞书链接>   — 存入向量库"
   M_LOG="  日志：tail -f /tmp/claude-local-rag.log"
+  M_MCP_HINT="  MCP 接入 — 将以下内容添加到 ~/.claude/settings.json："
+  M_MCP_CFG='  { "mcpServers": { "rag": { "command": "python", "args": ["'"$SCRIPT_DIR"'/mcp_server.py"] } } }'
 fi
 # ─────────────────────────────────────────────────────────
 
@@ -116,3 +120,6 @@ echo ""
 echo "$M_DONE"
 echo "$M_USAGE"
 echo "$M_LOG"
+echo ""
+echo "$M_MCP_HINT"
+echo "$M_MCP_CFG"
