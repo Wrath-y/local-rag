@@ -87,6 +87,19 @@ last_backup_timestamp_seconds = Gauge(
     registry=registry,
 )
 
+query_rewrite_total = Counter(
+    "rag_query_rewrite_total",
+    "Total number of query-rewrite operations, labelled by strategy.",
+    ["strategy"],  # expansion | hyde | multi_query
+    registry=registry,
+)
+
+query_rewrite_latency_seconds = Histogram(
+    "rag_query_rewrite_latency_seconds",
+    "Wall-clock latency of the query-rewrite LLM call.",
+    registry=registry,
+)
+
 
 def render() -> bytes:
     """Return Prometheus text format bytes suitable for /metrics."""

@@ -45,3 +45,8 @@ llm:
   api_key_env: "ANTHROPIC_API_KEY" # 从环境变量读取，不写死 key
   timeout: 30
   max_retries: 2
+
+query_rewrite:
+  enabled: false
+  strategy: "expansion"   # expansion | hyde | multi_query
+  provider: ""            # 留空则继承 llm.provider；可单独指定如 "openai"

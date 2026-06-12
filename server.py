@@ -135,6 +135,10 @@ reranker: CrossEncoder = None
 verbose_enabled: bool = config["retrieve"].get("verbose", True)
 dynamic_top_k_enabled: bool = config["retrieve"].get("dynamic_top_k", False)
 
+_qr_cfg = config.get("query_rewrite", {})
+query_rewrite_enabled: bool = bool(_qr_cfg.get("enabled", False))
+query_rewrite_strategy: str = str(_qr_cfg.get("strategy", "expansion"))
+
 index: faiss.IndexFlatIP = None
 stored_chunks: List[Dict] = []
 chunk_set: set = set()
@@ -831,11 +835,43 @@ def ingest(req: IngestRequest):
 
 # ================= RETRIEVE =================
 @app.post("/retrieve", response_model=RetrieveResponse)
-def retrieve(req: RetrieveRequest):
+async def retrieve(req: RetrieveRequest):
     if not req.text.strip():
         raise HTTPException(status_code=400, detail="text is empty")
 
     t0 = time.perf_counter()
+
+    # Query rewriting: expand/rewrite before vectorisation
+    queries: list[str] = [req.text]
+    if query_rewrite_enabled:
+        _qr_t0 = time.perf_counter()
+        try:
+            from query_rewrite import rewrite as _qr_rewrite
+            queries = await _qr_rewrite(req.text, query_rewrite_strategy)
+        except Exception as _qr_err:
+            structured_log("query_rewrite_error", {"error": str(_qr_err)})
+        finally:
+            metrics.query_rewrite_total.labels(strategy=query_rewrite_strategy).inc()
+            metrics.query_rewrite_latency_seconds.observe(time.perf_counter() - _qr_t0)
+
+    # If multi_query produced multiple variants, retrieve each and merge
+    if len(queries) > 1:
+        seen: set[str] = set()
+        merged: list[str] = []
+        for q in queries:
+            sub_req = RetrieveRequest(text=q, context_tokens_used=req.context_tokens_used)
+            sub_resp = _retrieve_single(sub_req, t0_override=None)
+            for chunk in sub_resp.chunks:
+                if chunk not in seen:
+                    seen.add(chunk)
+                    merged.append(chunk)
+        return RetrieveResponse(chunks=merged[:TOP_K])
+
+    return _retrieve_single(req, t0_override=t0)
+
+
+def _retrieve_single(req: RetrieveRequest, t0_override: Optional[float]) -> RetrieveResponse:
+    t0 = t0_override if t0_override is not None else time.perf_counter()
 
     # 入口一次性 snapshot 全局引用：写路径可能在检索中途原子替换 index/chunks，
     # 使用本地引用保证单次检索全程基于一致快照（GIL 保证单次赋值读原子）
@@ -970,6 +1006,21 @@ def toggle_dynamic_top_k(enabled: bool):
     global dynamic_top_k_enabled
     dynamic_top_k_enabled = enabled
     return {"dynamic_top_k_enabled": dynamic_top_k_enabled}
+
+
+# ================= QUERY REWRITE TOGGLE =================
+class QueryRewriteToggle(BaseModel):
+    enabled: bool
+    strategy: Optional[str] = None  # expansion | hyde | multi_query
+
+
+@app.post("/retrieve/query-rewrite")
+def toggle_query_rewrite(body: QueryRewriteToggle):
+    global query_rewrite_enabled, query_rewrite_strategy
+    query_rewrite_enabled = body.enabled
+    if body.strategy:
+        query_rewrite_strategy = body.strategy
+    return {"query_rewrite_enabled": query_rewrite_enabled, "strategy": query_rewrite_strategy}
 
 
 # ================= STORAGE INTEGRITY =================
