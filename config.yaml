@@ -38,3 +38,10 @@ log:
 
 server:
   port: 8765
+
+llm:
+  provider: "anthropic"            # openai | anthropic（或自定义注册的供应商名）
+  model: "claude-sonnet-4-6"
+  api_key_env: "ANTHROPIC_API_KEY" # 从环境变量读取，不写死 key
+  timeout: 30
+  max_retries: 2

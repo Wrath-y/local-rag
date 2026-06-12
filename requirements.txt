@@ -8,3 +8,6 @@ requests
 rank-bm25
 python-multipart
 prometheus-client>=0.20
+openai>=1.0.0
+anthropic>=0.25.0
+httpx>=0.27.0

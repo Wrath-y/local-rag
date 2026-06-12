@@ -1316,3 +1316,37 @@ async def import_kb(file: UploadFile = File(...)):
     shutil.move(tmp_texts, TEXTS_PATH)
     load_store()
     return {"status": "ok", "chunks_imported": len(stored_chunks)}
+
+
+# ================= AGENT =================
+from agent.loop import run as _agent_run
+from agent import memory as _agent_memory
+
+
+class AgentChatRequest(BaseModel):
+    message: str
+    session_id: Optional[str] = None
+
+
+@app.post("/agent/chat")
+async def agent_chat(body: AgentChatRequest):
+    session_id = body.session_id or _agent_memory.new_session()
+    reply = await _agent_run(session_id, body.message)
+    return {"session_id": session_id, "reply": reply}
+
+
+@app.post("/agent/session")
+async def agent_create_session():
+    sid = _agent_memory.new_session()
+    return {"session_id": sid}
+
+
+@app.get("/agent/sessions")
+async def agent_list_sessions():
+    return {"sessions": _agent_memory.list_sessions()}
+
+
+@app.delete("/agent/session/{session_id}")
+async def agent_delete_session(session_id: str):
+    _agent_memory.delete_session(session_id)
+    return {"deleted": session_id}
