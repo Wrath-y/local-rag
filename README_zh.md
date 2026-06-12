@@ -9,8 +9,10 @@
 [![FAISS](https://img.shields.io/badge/FAISS-Vector_Search-blue?style=flat-square)](https://github.com/facebookresearch/faiss)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Plugin-orange?style=flat-square)](https://claude.ai/code)
+[![MCP](https://img.shields.io/badge/MCP-Supported-blueviolet?style=flat-square)](https://modelcontextprotocol.io/)
+[![Agent](https://img.shields.io/badge/Agent-ReAct-orange?style=flat-square)]()
 
-[安装](#安装) · [使用方法](#使用方法) · [工作原理](#工作原理prompt-是如何被修改的) · [命令汇总](#命令汇总) · [常见问题](#常见问题)
+[安装](#安装) · [使用方法](#使用方法) · [LLM 配置](#llm-配置) · [Agent 模式](#agent-模式) · [MCP 接入](#mcp-接入) · [工作原理](#工作原理prompt-是如何被修改的) · [命令汇总](#命令汇总) · [常见问题](#常见问题)
 
 📖 [English Documentation](README.md)
 
@@ -168,6 +170,148 @@ start.bat
 
 ---
 
+### 🔍 查询改写（高级）
+
+开启后，向量化检索之前会先用 LLM 对查询进行改写，提升短促、模糊或含错别字查询的召回率：
+
+```bash
+/rag-rewrite on                         # 开启（默认策略：expansion）
+/rag-rewrite off                        # 关闭
+/rag-rewrite on --strategy hyde         # 开启 HyDE 策略
+/rag-rewrite on --strategy multi_query  # 开启多路查询策略
+```
+
+| 策略 | 原理 | 适用场景 |
+|------|------|----------|
+| `expansion`（默认） | 补充同义词和相关词，扩展为更丰富的查询 | 查询过短或领域术语不规范 |
+| `hyde` | 生成"假设文档"，用文档向量代替查询向量 | 开放式问题，查询与文档风格差异大 |
+| `multi_query` | 生成 3 个语义相近的变体，各自检索后合并去重 | 多义词、查询意图不明确 |
+
+> 默认关闭。每次检索额外增加约 1 次 LLM 调用（约 100–500ms）。LLM 调用失败时自动降级到原始查询，不返回错误。
+
+---
+
+## LLM 配置
+
+项目新增 LLM 供应商抽象层，供 Agent 模式和查询改写使用，在 `config.yaml` 中配置：
+
+```yaml
+llm:
+  provider: "anthropic"            # openai | anthropic
+  model: "claude-sonnet-4-6"
+  api_key_env: "ANTHROPIC_API_KEY" # 从该环境变量读取 API key
+  timeout: 30
+  max_retries: 2
+```
+
+**切换供应商** — 修改 `provider` 和 `api_key_env`，重启服务生效：
+
+```yaml
+# 切换到 OpenAI
+llm:
+  provider: "openai"
+  model: "gpt-4o"
+  api_key_env: "OPENAI_API_KEY"
+```
+
+**接入新供应商** — 新建 `llm/your_provider.py` 继承 `LLMProvider`，在 `llm/factory.py` 注册一行：
+
+```python
+from .your_provider import YourProvider
+register("your-name")(YourProvider)
+```
+
+---
+
+## Agent 模式
+
+项目现在内置了 ReAct Agent，可根据你的消息自主决定调用哪个 RAG 工具。
+
+### 交互式 CLI
+
+```bash
+python -m agent.cli                        # 开启新会话
+python -m agent.cli --session <uuid>       # 恢复已有会话
+```
+
+示例对话：
+
+```
+New session: 3f2a...
+You: 我们的 API 文档里关于鉴权是怎么说的？
+Agent: [调用 rag_retrieve("鉴权")]
+       根据 API 规范，鉴权使用 Bearer Token，需要在申请时声明 scope...
+
+You: 帮我把这份新文档入库：/docs/auth-v2.md
+Agent: [调用 rag_ingest(...)]
+       入库完成，新增 8 个 chunks，来源标识：auth-v2.md
+```
+
+### HTTP API
+
+```bash
+# 创建会话
+curl -X POST http://127.0.0.1:8765/agent/session
+
+# 对话（不传 session_id 时自动创建）
+curl -X POST http://127.0.0.1:8765/agent/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Redis 是什么？", "session_id": "<uuid>"}'
+
+# 查看所有会话
+curl http://127.0.0.1:8765/agent/sessions
+
+# 删除会话
+curl -X DELETE http://127.0.0.1:8765/agent/session/<uuid>
+```
+
+对话历史持久化在 SQLite（`agent/agent.db`），服务重启后依然保留。
+
+---
+
+## MCP 接入
+
+MCP（Model Context Protocol）让 Claude Code 和 Codex 原生调用 RAG 工具，无需任何斜杠命令。
+
+### 配置步骤
+
+**1. 启动 RAG 服务**（如尚未运行）：
+
+```bash
+./start.sh
+```
+
+**2. 注册 MCP server** — 添加到 `~/.claude/settings.json`：
+
+```json
+{
+  "mcpServers": {
+    "rag": {
+      "command": "python",
+      "args": ["/绝对路径/rag-plugin/mcp_server.py"]
+    }
+  }
+}
+```
+
+> `start.sh` 安装完成后会打印含正确路径的完整配置片段，可直接复制。
+
+**3. 重启 Claude Code** 加载 MCP server。
+
+### 可用 MCP 工具
+
+| 工具 | 说明 |
+|------|------|
+| `rag_retrieve` | 语义检索知识库 |
+| `rag_ingest` | 将文本存入知识库 |
+| `rag_delete_source` | 删除指定来源的所有 chunks |
+| `rag_status` | 服务健康状态 + chunk 总数 |
+| `rag_list_sources` | 列出所有来源及 chunk 数 |
+
+注册后，Claude Code 会在相关问题时自动调用这些工具，无需再手动输入 `/rag-retrieve`。
+
+---
+
 ## 命令汇总
 
 | 命令 | 说明 | 额外 Token |
@@ -177,6 +321,7 @@ start.bat
 | `/rag-retrieve <问题>` | 主动检索 | ✓ 少量 |
 | `/rag-mode on/off` | 自动检索模式 | ✓ 开启时 |
 | `/rag-rerank on/off` | rerank 精排 | — |
+| `/rag-rewrite on/off [--strategy <名称>]` | 查询改写；策略：`expansion`\|`hyde`\|`multi_query` | — |
 | `/rag-dynamic-top-k on/off` | 动态 top_k（上下文接近上限时自动缩减返回数量） | — |
 | `/rag-verbose on/off` | 检索可观测性日志 | — |
 | `/rag-status` | 服务状态 + chunk 总数 + 检索命中率统计 | — |
@@ -372,6 +517,9 @@ embedding:
 ```
 claude-local-rag/
 ├── server.py                   # FastAPI 后台服务
+├── mcp_server.py               # MCP stdio server（Claude Code / Codex 集成）
+├── mcp_tools.py                # MCP 工具实现
+├── query_rewrite.py            # 查询改写策略（expansion / HyDE / multi_query）
 ├── config.yaml                 # 配置文件
 ├── requirements.txt            # Python 依赖
 ├── setup_hook.py               # 跨平台 Hook 注册脚本（由 start.sh / start.bat 调用）
@@ -381,6 +529,17 @@ claude-local-rag/
 ├── stop.bat                    # 停止服务脚本（Windows）
 ├── index.bin                   # 向量索引（自动生成）
 ├── chunks.pkl                  # 文档存储（自动生成）
+├── llm/                        # LLM 供应商抽象层
+│   ├── base.py                 # LLMProvider 抽象基类
+│   ├── openai_provider.py      # OpenAI 实现
+│   ├── anthropic_provider.py   # Anthropic 实现
+│   └── factory.py              # get_provider() 工厂 + 注册表
+├── agent/                      # ReAct Agent
+│   ├── db.py                   # SQLite 连接 + Schema 初始化
+│   ├── memory.py               # 会话与消息持久化
+│   ├── tools.py                # RAG 工具定义
+│   ├── loop.py                 # ReAct 推理循环
+│   └── cli.py                  # 交互式 CLI 入口
 └── .claude/
     ├── settings.json           # Hook 配置
     ├── hook_script.py          # UserPromptSubmit Hook
@@ -388,6 +547,7 @@ claude-local-rag/
         ├── rag.md
         ├── rag-retrieve.md
         ├── rag-mode.md
+        ├── rag-rewrite.md
         └── ...
 ```
 
@@ -402,6 +562,7 @@ claude-local-rag/
 - [x] 向量语义检索（FAISS + BGE Embedding）
 - [x] BM25 混合评分（vec × 0.7 + bm25 × 0.3），BM25 替代 bigram 覆盖率，提升长尾词召回
 - [x] Cross-Encoder Rerank 精排
+- [x] 查询改写（expansion / HyDE / multi_query 三种策略）
 - [ ] Chunk 首尾重叠（overlap），避免语义在边界处截断
 - [ ] 语义切分（按段落/主题边界，替代当前句子边界切分）
 - [x] 动态 top_k（根据剩余上下文窗口自动调整返回数量）
@@ -481,13 +642,13 @@ tail -f /tmp/claude-local-rag.log
 </details>
 
 <details>
-<summary><b>Q：为什么不支持 Query Rewriting（查询改写）？</b></summary>
+<summary><b>Q：查询改写（Query Rewriting）是怎么工作的？</b></summary>
 
-Query Rewriting 通过 LLM 将用户问题改写为更适合检索的形式来提升召回率，是常见的 RAG 增强手段。本项目**有意不引入**，原因如下：
+通过 `/rag-rewrite on` 开启。检索前，LLM 会用以下三种策略之一对查询进行改写：
 
-- **违背节省 token 的核心目标**：每次改写都需要额外调用 LLM，反而增加消耗
-- **同步 Hook 不适合 LLM 调用**：`UserPromptSubmit` Hook 是同步拦截，LLM 调用会引入明显延迟
-- **已有三层过滤兜底**：向量语义检索 → 关键词混合评分 → Rerank 精排，覆盖了大多数检索场景
+- **expansion** — 补充同义词和相关词，让查询更丰富
+- **hyde** — 生成一段"假设文档"并用其向量检索（对开放式问题效果好）
+- **multi_query** — 生成 3 个语义相近的查询变体，分别检索后合并去重
 
-> 如果遇到指代不清的查询（如「那这个呢？」），建议使用 `/rag-retrieve <完整问题>` 主动检索，效果优于依赖自动模式。
+LLM 调用失败时自动降级到原始查询，不影响正常使用。
 </details>

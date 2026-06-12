@@ -9,8 +9,10 @@
 [![FAISS](https://img.shields.io/badge/FAISS-Vector_Search-blue?style=flat-square)](https://github.com/facebookresearch/faiss)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Plugin-orange?style=flat-square)](https://claude.ai/code)
+[![MCP](https://img.shields.io/badge/MCP-Supported-blueviolet?style=flat-square)](https://modelcontextprotocol.io/)
+[![Agent](https://img.shields.io/badge/Agent-ReAct-orange?style=flat-square)]()
 
-[Installation](#installation) · [Usage](#usage) · [How It Works](#how-it-works-how-the-prompt-is-modified) · [Command Reference](#command-reference) · [FAQ](#faq)
+[Installation](#installation) · [Usage](#usage) · [LLM Configuration](#llm-configuration) · [Agent Mode](#agent-mode) · [MCP Integration](#mcp-integration) · [Command Reference](#command-reference) · [How It Works](#how-it-works-how-the-prompt-is-modified) · [FAQ](#faq)
 
 📖 [中文文档](README_zh.md)
 
@@ -168,6 +170,148 @@ When enabled, the hook estimates how many tokens are already in the conversation
 
 ---
 
+### 🔍 Query Rewriting (Advanced)
+
+When enabled, the query is rewritten by an LLM before vectorisation, improving recall for short, vague, or misspelled queries:
+
+```bash
+/rag-rewrite on                         # Enable (uses default strategy: expansion)
+/rag-rewrite off                        # Disable
+/rag-rewrite on --strategy hyde         # Enable with HyDE strategy
+/rag-rewrite on --strategy multi_query  # Enable with multi-query strategy
+```
+
+| Strategy | How It Works | Best For |
+|----------|-------------|----------|
+| `expansion` (default) | Expands query with synonyms and related terms | Short or domain-specific queries |
+| `hyde` | Generates a hypothetical document, uses its vector | Open-ended questions where query and docs differ in style |
+| `multi_query` | Generates 3 query variants, retrieves each, merges results | Ambiguous queries with multiple valid interpretations |
+
+> Disabled by default. Each retrieval adds ~1 LLM call (~100–500 ms). If the LLM call fails, the original query is used transparently — no 500 errors.
+
+---
+
+## LLM Configuration
+
+The project now includes an LLM provider abstraction layer for use by Agent mode and Query Rewriting. Configure in `config.yaml`:
+
+```yaml
+llm:
+  provider: "anthropic"            # openai | anthropic
+  model: "claude-sonnet-4-6"
+  api_key_env: "ANTHROPIC_API_KEY" # key is read from this environment variable
+  timeout: 30
+  max_retries: 2
+```
+
+**Switching providers** — change `provider` and `api_key_env`, restart the service:
+
+```yaml
+# Switch to OpenAI
+llm:
+  provider: "openai"
+  model: "gpt-4o"
+  api_key_env: "OPENAI_API_KEY"
+```
+
+**Adding a new provider** — create `llm/your_provider.py` inheriting `LLMProvider`, then register it in `llm/factory.py`:
+
+```python
+from .your_provider import YourProvider
+register("your-name")(YourProvider)
+```
+
+---
+
+## Agent Mode
+
+The project now ships a ReAct Agent that can autonomously decide which RAG tools to invoke based on your message.
+
+### Interactive CLI
+
+```bash
+python -m agent.cli                        # Start a new session
+python -m agent.cli --session <uuid>       # Resume an existing session
+```
+
+Example session:
+
+```
+New session: 3f2a...
+You: What do our API docs say about authentication?
+Agent: [calls rag_retrieve("authentication")]
+       According to the API spec, authentication uses Bearer tokens with...
+
+You: Ingest this new auth guide: /docs/auth-v2.md
+Agent: [calls rag_ingest(...)]
+       Ingestion complete. 8 chunks added from source 'auth-v2.md'.
+```
+
+### HTTP API
+
+```bash
+# Create a session
+curl -X POST http://127.0.0.1:8765/agent/session
+
+# Chat (auto-creates session if omitted)
+curl -X POST http://127.0.0.1:8765/agent/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "What is Redis?", "session_id": "<uuid>"}'
+
+# List sessions
+curl http://127.0.0.1:8765/agent/sessions
+
+# Delete a session
+curl -X DELETE http://127.0.0.1:8765/agent/session/<uuid>
+```
+
+Agent conversation history is persisted in SQLite (`agent/agent.db`) — survives service restarts.
+
+---
+
+## MCP Integration
+
+MCP (Model Context Protocol) lets Claude Code and Codex call RAG tools natively, without any slash commands.
+
+### Setup
+
+**1. Start the RAG service** (if not already running):
+
+```bash
+./start.sh
+```
+
+**2. Register the MCP server** — add to `~/.claude/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "rag": {
+      "command": "python",
+      "args": ["/absolute/path/to/rag-plugin/mcp_server.py"]
+    }
+  }
+}
+```
+
+> The `start.sh` script prints the exact config snippet with the correct path at the end of installation.
+
+**3. Restart Claude Code** to load the MCP server.
+
+### Available MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `rag_retrieve` | Semantic search across the knowledge base |
+| `rag_ingest` | Add text to the knowledge base |
+| `rag_delete_source` | Remove all chunks from a source |
+| `rag_status` | Service health + chunk count |
+| `rag_list_sources` | List all sources with chunk counts |
+
+Once registered, Claude Code will automatically call these tools when relevant — no `/rag-retrieve` command needed.
+
+---
+
 ## Command Reference
 
 | Command | Description | Extra Tokens |
@@ -177,6 +321,7 @@ When enabled, the hook estimates how many tokens are already in the conversation
 | `/rag-retrieve <question>` | Manual retrieval | ✓ Small |
 | `/rag-mode on/off` | Auto-retrieve mode | ✓ When on |
 | `/rag-rerank on/off` | Cross-encoder rerank | — |
+| `/rag-rewrite on/off [--strategy <name>]` | Query rewriting; strategy: `expansion`\|`hyde`\|`multi_query` | — |
 | `/rag-dynamic-top-k on/off` | Dynamic top_k (auto-reduce chunk count when context is nearly full) | — |
 | `/rag-verbose on/off` | Retrieval observability logs | — |
 | `/rag-status` | Service status + chunk count + hit rate | — |
@@ -372,6 +517,9 @@ Common alternatives:
 ```
 claude-local-rag/
 ├── server.py                   # FastAPI backend service
+├── mcp_server.py               # MCP stdio server (Claude Code / Codex integration)
+├── mcp_tools.py                # MCP tool implementations
+├── query_rewrite.py            # Query rewriting strategies (expansion / HyDE / multi_query)
 ├── config.yaml                 # Configuration file
 ├── requirements.txt            # Python dependencies
 ├── setup_hook.py               # Cross-platform Hook registration (called by start.sh / start.bat)
@@ -381,6 +529,17 @@ claude-local-rag/
 ├── stop.bat                    # Stop service script (Windows)
 ├── index.bin                   # Vector index (auto-generated)
 ├── chunks.pkl                  # Document store (auto-generated)
+├── llm/                        # LLM provider abstraction
+│   ├── base.py                 # LLMProvider abstract base class
+│   ├── openai_provider.py      # OpenAI implementation
+│   ├── anthropic_provider.py   # Anthropic implementation
+│   └── factory.py              # get_provider() factory + registry
+├── agent/                      # ReAct Agent
+│   ├── db.py                   # SQLite connection + schema
+│   ├── memory.py               # Session + message persistence
+│   ├── tools.py                # RAG tool definitions
+│   ├── loop.py                 # ReAct reasoning loop
+│   └── cli.py                  # Interactive CLI entry point
 └── .claude/
     ├── settings.json           # Hook configuration
     ├── hook_script.py          # UserPromptSubmit Hook
@@ -388,6 +547,7 @@ claude-local-rag/
         ├── rag.md
         ├── rag-retrieve.md
         ├── rag-mode.md
+        ├── rag-rewrite.md
         └── ...
 ```
 
@@ -402,6 +562,7 @@ claude-local-rag/
 - [x] Vector semantic search (FAISS + BGE Embedding)
 - [x] BM25 hybrid scoring (vec × 0.7 + bm25 × 0.3) — improves long-tail keyword recall
 - [x] Cross-Encoder Rerank
+- [x] Query Rewriting (expansion / HyDE / multi-query strategies)
 - [ ] Chunk head/tail overlap — prevent semantic truncation at boundaries
 - [ ] Semantic chunking (split on paragraph/topic boundaries instead of sentence boundaries)
 - [x] Dynamic top_k (auto-adjust based on remaining context window)
@@ -481,13 +642,13 @@ Only `/rag-update` forces a full rebuild, because it is an explicit "replace" op
 </details>
 
 <details>
-<summary><b>Q: Why no Query Rewriting?</b></summary>
+<summary><b>Q: How does Query Rewriting work?</b></summary>
 
-Query Rewriting uses an LLM to rewrite the user's question into a form better suited for retrieval. It's a common RAG enhancement technique. This project **intentionally omits it** for three reasons:
+Enable it with `/rag-rewrite on`. Before vectorising your query, an LLM rewrites it using one of three strategies:
 
-- **Conflicts with the core goal of saving tokens**: Each rewrite requires an extra LLM call, increasing cost rather than reducing it
-- **Synchronous Hook is unsuitable for LLM calls**: The `UserPromptSubmit` Hook is a synchronous intercept — an LLM call would introduce noticeable latency
-- **Three-layer filtering already covers most cases**: Vector semantic search → hybrid BM25 scoring → Rerank handles the vast majority of real-world retrieval scenarios
+- **expansion** — adds synonyms and related terms to the query
+- **hyde** — generates a hypothetical document and uses its embedding (great for open-ended questions)
+- **multi_query** — generates 3 query variants, retrieves results for each, and merges/deduplicates
 
-> For ambiguous queries (e.g. "what about that one?"), use `/rag-retrieve <full question>` to retrieve manually — this works better than relying on auto mode.
+If the LLM call fails for any reason, the original query is used — no errors, no interruption.
 </details>
