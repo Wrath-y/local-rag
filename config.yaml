@@ -8,6 +8,7 @@ embedding:
 chunk:
   min_tokens: 200
   max_tokens: 400
+  structure_aware: true   # 启用结构感知分块（Markdown 表格/代码块/列表保持原子完整）
 
 retrieve:
   top_k: 3

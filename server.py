@@ -33,6 +33,8 @@ with open(os.path.join(_dir, "config.yaml"), "r") as f:
 MODEL_NAME = config["model"]["name"]
 CHUNK_MIN = config["chunk"]["min_tokens"]
 CHUNK_MAX = config["chunk"]["max_tokens"]
+# 是否启用结构感知（Markdown）分块；非 Markdown 文本仍走原有的句子级逻辑
+STRUCTURE_AWARE_CHUNK = bool(config["chunk"].get("structure_aware", True))
 TOP_K = config["retrieve"]["top_k"]
 CONTEXT_WINDOW = config["retrieve"].get("context_window", 180000)
 RESPONSE_RESERVE = config["retrieve"].get("response_reserve", 8000)
@@ -656,6 +658,19 @@ def save_store(new_index=None, new_chunks=None, *, wal_offset: int = 0, wal_seq:
 
 # ================= CHUNK =================
 def chunk_text(text: str) -> List[str]:
+    # 优先尝试结构感知（Markdown）分块：检测到 Markdown 标志时使用 chunk_markdown
+    if STRUCTURE_AWARE_CHUNK:
+        try:
+            from markdown_chunker import chunk_markdown, looks_like_markdown
+            if looks_like_markdown(text):
+                md_chunks = chunk_markdown(text, CHUNK_MIN, CHUNK_MAX)
+                if md_chunks:
+                    return md_chunks
+                # 未产出有效 chunk 时回退到原句子级逻辑
+        except Exception:
+            # 结构感知分块出现异常时不影响主流程，回退到原逻辑
+            pass
+
     sentences = re.split(r'(?<=[。！？.!?\n])\s*', text)
     sentences = [s.strip() for s in sentences if s.strip()]
 
