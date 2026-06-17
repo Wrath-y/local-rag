@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 
 # ============================================================
@@ -197,10 +197,51 @@ def _last_heading(parts: List[Block]) -> Optional[Block]:
     return last
 
 
+# ============================================================
+# 上下文强化：标题面包屑前缀
+# ============================================================
+
+def _clean_heading_text(heading_line: str) -> str:
+    """去除标题行的 # 标记，仅保留文字内容。"""
+    m = _HEADING_RE.match(heading_line.strip())
+    if m:
+        return m.group(2).strip()
+    return heading_line.strip()
+
+
+def build_heading_prefix(
+    heading_stack: List[Block],
+    max_depth: int = 3,
+    format: str = "breadcrumb",
+) -> str:
+    """根据标题栈生成 chunk 前缀字符串。
+
+    参数：
+        heading_stack: 当前标题栈（从顶层到深层）；Block.text 为原始标题行。
+        max_depth: 最多传播的标题层级数（仅取栈尾 N 个标题）。
+        format: 前缀格式，当前仅支持 "breadcrumb"。
+
+    返回：
+        面包屑前缀，形如 "[A > B > C]\n"；栈为空时返回 ""。
+    """
+    if not heading_stack or max_depth <= 0:
+        return ""
+    titles = [_clean_heading_text(h.text) for h in heading_stack[-max_depth:]]
+    titles = [t for t in titles if t]
+    if not titles:
+        return ""
+    # 仅支持 breadcrumb；其他格式默认 fallback 到 breadcrumb。
+    return "[" + " > ".join(titles) + "]\n"
+
+
 def chunk_markdown(
     text: str,
     min_tokens: int = 200,
     max_tokens: int = 400,
+    context_prefix_enabled: bool = False,
+    context_prefix_max_depth: int = 3,
+    context_prefix_format: str = "breadcrumb",
+    initial_heading_stack: Optional[List[Block]] = None,
 ) -> List[str]:
     """对 Markdown 文本进行结构感知分块。
 
@@ -209,9 +250,15 @@ def chunk_markdown(
         min_tokens: 单 chunk 的目标下限（达到即可 flush）。
         max_tokens: 单 chunk 的目标上限（超过则提前 flush；
                     单个原子块本身超过该值时保持完整）。
+        context_prefix_enabled: 是否在每个 chunk 文本前附加面包屑标题前缀。
+        context_prefix_max_depth: 最多传播的标题层级数。
+        context_prefix_format: 前缀格式（当前仅 breadcrumb）。
+        initial_heading_stack: 外部传入的初始标题栈（用于层次化分块中 child
+                    继承 parent 所处的标题上下文）。
 
     返回：
         分块后的字符串列表，已剔除空白 chunk。
+        启用 context_prefix 后，每个 chunk 文本开头会附加面包屑标题前缀。
     """
     # 边界：空 / 纯空白
     if not text or not text.strip():
@@ -221,18 +268,32 @@ def chunk_markdown(
     if not blocks:
         return []
 
-    chunks: List[str] = []
+    # 文本块 + 该 chunk flush 时的标题栈快照，用于最后生成面包屑前缀
+    chunks_with_snap: List[Tuple[str, List[Block]]] = []
     cur: List[Block] = []
     cur_tokens = 0
     # 上一个 chunk 末尾的最近标题，用作下一 chunk 起始的上下文前缀
     pending_heading: Optional[Block] = None
 
+    # 全局标题栈：随遍历推进同步更新，反映当前所处的标题层级路径
+    heading_stack: List[Block] = list(initial_heading_stack or [])
+
+    def _update_heading_stack(h: Block) -> None:
+        # 同级或更高级标题会清除栈中所有 level >= h.level 的项
+        while heading_stack and heading_stack[-1].level >= h.level:
+            heading_stack.pop()
+        heading_stack.append(h)
+
     def flush() -> None:
-        """把当前累积的 cur 输出为一个 chunk，并更新 pending_heading。"""
+        """把当前累积的 cur 输出为一个 chunk，并更新 pending_heading。
+
+        面包屑快照取 flush 时刻的 heading_stack，可完整反映 chunk 内容
+        所在的标题层级（包含本 chunk 内出现的最深标题）。
+        """
         nonlocal cur, cur_tokens, pending_heading
         if not cur:
             return
-        chunks.append(_render(cur))
+        chunks_with_snap.append((_render(cur), list(heading_stack)))
         last_h = _last_heading(cur)
         if last_h is not None:
             pending_heading = last_h
@@ -256,12 +317,14 @@ def chunk_markdown(
         # ----- 标题：与后续合并，不单独成块 -----
         if b.type == 'heading':
             # 若当前累积已达 min，先 flush 让标题归入下一 chunk
+            # 注意：此时 heading_stack 尚未更新，前一 chunk 的面包屑不会被本标题污染
             if cur_tokens >= min_tokens:
                 flush()
             # 出现新的显式标题，无需再注入历史 pending_heading
             pending_heading = None
             cur.append(b)
             cur_tokens += tks
+            _update_heading_stack(b)
             i += 1
             continue
 
@@ -276,7 +339,8 @@ def chunk_markdown(
                 if pending_heading is not None:
                     prefix.append(pending_heading)
                     pending_heading = None
-                chunks.append(_render(prefix + [b]))
+                # 大块独立成 chunk：使用当前 heading_stack 作为面包屑上下文
+                chunks_with_snap.append((_render(prefix + [b]), list(heading_stack)))
                 # 大块输出后，沿用 prefix 中的标题作为后续 pending_heading
                 last_h = _last_heading(prefix)
                 if last_h is not None:
@@ -287,7 +351,8 @@ def chunk_markdown(
                 if not prefix and pending_heading is not None:
                     prefix.append(pending_heading)
                     pending_heading = None
-                chunks.append(_render(prefix + [b]))
+                # 此时 heading_stack 已包含 cur 中的所有标题，面包屑反映完整层级
+                chunks_with_snap.append((_render(prefix + [b]), list(heading_stack)))
                 last_h = _last_heading(prefix)
                 if last_h is not None:
                     pending_heading = last_h
@@ -313,9 +378,20 @@ def chunk_markdown(
 
     # 收尾
     if cur:
-        chunks.append(_render(cur))
+        chunks_with_snap.append((_render(cur), list(heading_stack)))
 
-    return [c for c in chunks if c.strip()]
+    # 统一应用面包屑前缀；关闭时行为与原逻辑完全等价
+    result: List[str] = []
+    for chunk_text, snap in chunks_with_snap:
+        if context_prefix_enabled:
+            prefix_str = build_heading_prefix(
+                snap, context_prefix_max_depth, context_prefix_format
+            )
+            if prefix_str:
+                chunk_text = prefix_str + chunk_text
+        if chunk_text.strip():
+            result.append(chunk_text)
+    return result
 
 
 # ============================================================

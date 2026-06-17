@@ -12,6 +12,10 @@ chunk:
   hierarchical:
     enabled: false           # 默认关闭，开启后启用 Parent-Child 层次化分块
     parent_max_tokens: 800   # parent chunk 的最大 token 数（child 用于检索，命中后返回 parent 给 LLM）
+  context_prefix:
+    enabled: false           # 默认关闭；开启后将标题层级以面包屑形式附加到 chunk 文本之前
+    format: "breadcrumb"     # 前缀格式：当前仅支持 breadcrumb（形如 [A > B > C]）
+    max_depth: 3             # 最多传播的标题层级数（仅取栈尾 N 个标题）
 
 retrieve:
   top_k: 3

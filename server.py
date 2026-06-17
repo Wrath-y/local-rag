@@ -39,6 +39,11 @@ STRUCTURE_AWARE_CHUNK = bool(config["chunk"].get("structure_aware", True))
 _hier_cfg = config["chunk"].get("hierarchical", {}) or {}
 HIERARCHICAL_ENABLED: bool = bool(_hier_cfg.get("enabled", False))
 PARENT_MAX_TOKENS: int = int(_hier_cfg.get("parent_max_tokens", 800))
+# 上下文强化（标题面包屑前缀）：仅在结构感知分块路径中生效，默认关闭
+_ctx_cfg = config["chunk"].get("context_prefix", {}) or {}
+CONTEXT_PREFIX_ENABLED: bool = bool(_ctx_cfg.get("enabled", False))
+CONTEXT_PREFIX_FORMAT: str = str(_ctx_cfg.get("format", "breadcrumb"))
+CONTEXT_PREFIX_MAX_DEPTH: int = int(_ctx_cfg.get("max_depth", 3))
 TOP_K = config["retrieve"]["top_k"]
 CONTEXT_WINDOW = config["retrieve"].get("context_window", 180000)
 RESPONSE_RESERVE = config["retrieve"].get("response_reserve", 8000)
@@ -709,7 +714,12 @@ def _chunk_with_size(text: str, min_t: int, max_t: int) -> List[str]:
         try:
             from markdown_chunker import chunk_markdown, looks_like_markdown
             if looks_like_markdown(text):
-                md_chunks = chunk_markdown(text, min_t, max_t)
+                md_chunks = chunk_markdown(
+                    text, min_t, max_t,
+                    context_prefix_enabled=CONTEXT_PREFIX_ENABLED,
+                    context_prefix_max_depth=CONTEXT_PREFIX_MAX_DEPTH,
+                    context_prefix_format=CONTEXT_PREFIX_FORMAT,
+                )
                 if md_chunks:
                     return md_chunks
                 # 未产出有效 chunk 时回退到原句子级逻辑
