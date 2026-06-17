@@ -10,6 +10,7 @@ chunk:
   #   fixed     —— 句子级固定大小分块（默认，向后兼容）
   #   structure —— 结构感知分块（Markdown 表格/代码块/列表原子完整）
   #   semantic  —— 语义分块：基于 embedding 余弦相似度在语义断裂处切分
+  #   agentic   —— 由 LLM 智能分析文档结构并决定分块边界（成本较高，适合高价值文档）
   strategy: "fixed"
   min_tokens: 200
   max_tokens: 400
@@ -19,6 +20,10 @@ chunk:
     threshold_percentile: 90 # 断裂阈值百分位：仅在相似度低于第 (100-N) 百分位处切分（越大越粗，90≈10%位置切）
     min_chunk_size: 2        # 最小 chunk 包含句子数
     max_chunk_size: 20       # 最大 chunk 包含句子数
+  agentic:
+    enabled: false              # 是否启用 agentic 分块（仅作提示，最终以 strategy=agentic 为准）
+    generate_summary: true      # 是否让 LLM 为每个 chunk 生成一句话摘要并附加为前缀
+    max_llm_input_tokens: 4000  # 单次发送给 LLM 的最大 token 数；超长文档按行分段调用
   hierarchical:
     enabled: false           # 默认关闭，开启后启用 Parent-Child 层次化分块
     parent_max_tokens: 800   # parent chunk 的最大 token 数（child 用于检索，命中后返回 parent 给 LLM）

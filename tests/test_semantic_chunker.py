@@ -364,8 +364,8 @@ def test_chunk_strategy_endpoint_runtime_switch(monkeypatch):
             r = client.get("/config/chunk-strategy")
             assert r.status_code == 200
             body = r.json()
-            assert body["strategy"] in ("fixed", "structure", "semantic")
-            assert set(body["valid"]) == {"fixed", "structure", "semantic"}
+            assert body["strategy"] in ("fixed", "structure", "semantic", "agentic")
+            assert set(body["valid"]) == {"fixed", "structure", "semantic", "agentic"}
 
             # PUT \u5207\u6362\u4e3a semantic
             r = client.put("/config/chunk-strategy", json={"strategy": "semantic"})

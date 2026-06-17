@@ -33,8 +33,8 @@ with open(os.path.join(_dir, "config.yaml"), "r") as f:
 MODEL_NAME = config["model"]["name"]
 CHUNK_MIN = config["chunk"]["min_tokens"]
 CHUNK_MAX = config["chunk"]["max_tokens"]
-# 顶层分块策略：fixed | structure | semantic（运行时可通过 /config/chunk-strategy 切换）
-_VALID_CHUNK_STRATEGIES = {"fixed", "structure", "semantic"}
+# 顶层分块策略：fixed | structure | semantic | agentic（运行时可通过 /config/chunk-strategy 切换）
+_VALID_CHUNK_STRATEGIES = {"fixed", "structure", "semantic", "agentic"}
 CHUNK_STRATEGY: str = str(config["chunk"].get("strategy", "fixed")).lower()
 if CHUNK_STRATEGY not in _VALID_CHUNK_STRATEGIES:
     print(f"[chunk] invalid strategy {CHUNK_STRATEGY!r} in config, falling back to 'fixed'")
@@ -46,6 +46,10 @@ _sem_cfg = config["chunk"].get("semantic", {}) or {}
 SEMANTIC_THRESHOLD_PERCENTILE: int = int(_sem_cfg.get("threshold_percentile", 90))
 SEMANTIC_MIN_CHUNK_SIZE: int = int(_sem_cfg.get("min_chunk_size", 2))
 SEMANTIC_MAX_CHUNK_SIZE: int = int(_sem_cfg.get("max_chunk_size", 20))
+# Agentic 分块参数（仅在 strategy=agentic 时生效；通过 LLM 智能判定 chunk 边界）
+_agentic_cfg = config["chunk"].get("agentic", {}) or {}
+AGENTIC_GENERATE_SUMMARY: bool = bool(_agentic_cfg.get("generate_summary", True))
+AGENTIC_MAX_LLM_INPUT_TOKENS: int = int(_agentic_cfg.get("max_llm_input_tokens", 4000))
 # 层次化（Parent-Child）分块配置：FAISS 检索 child（小块），命中后返回 parent（大块）给 LLM
 _hier_cfg = config["chunk"].get("hierarchical", {}) or {}
 HIERARCHICAL_ENABLED: bool = bool(_hier_cfg.get("enabled", False))
@@ -765,14 +769,85 @@ def _chunk_structure(text: str, min_t: int, max_t: int) -> List[str]:
     return _chunk_plain_text(text, min_t, max_t)
 
 
+def _build_agentic_llm_fn():
+    """构造 agentic 分块用的 LLM 调用函数，复用 llm/ 下的 provider 抽象。
+
+    返回异步函数 ``async (prompt: str) -> str``。
+    如果环境未配置 API key、依赖未安装等原因创建 provider 失败，
+    返回一个会抛异常的函数，在 agentic_chunk 内部会捕获并降级。
+    """
+    from llm.factory import get_provider
+    llm_cfg = dict(config.get("llm", {}))
+    provider = get_provider(llm_cfg)
+
+    async def _llm_fn(prompt: str) -> str:
+        return await provider.complete([{"role": "user", "content": prompt}])
+
+    return _llm_fn
+
+
+def _chunk_agentic(text: str, min_t: int, max_t: int) -> List[str]:
+    """Agentic 分块：同步包装。
+
+    FastAPI 中同步 handler 运行于 starlette 的线程池（不占用事件循环），
+    因此可安全使用 ``asyncio.run`` 调用异步 LLM；WAL replay 路径也在同步启动阶段，
+    同样不冲突。如调用者已在事件循环内使用 agentic，请改调 chunk_text_async。
+
+    失败时降级为结构感知分块（fallback_fn=_chunk_structure）。
+    """
+    import asyncio
+    try:
+        from agentic_chunker import agentic_chunk
+    except Exception as e:
+        print(f"[chunk] agentic module unavailable, fallback to structure: {e}")
+        return _chunk_structure(text, min_t, max_t)
+
+    try:
+        llm_fn = _build_agentic_llm_fn()
+    except Exception as e:
+        print(f"[chunk] LLM provider unavailable, fallback to structure: {e}")
+        return _chunk_structure(text, min_t, max_t)
+
+    async def _runner() -> List[str]:
+        return await agentic_chunk(
+            text,
+            llm_fn=llm_fn,
+            generate_summary=AGENTIC_GENERATE_SUMMARY,
+            max_llm_input_tokens=AGENTIC_MAX_LLM_INPUT_TOKENS,
+            min_tokens=min_t,
+            max_tokens=max_t,
+            fallback_fn=_chunk_structure,
+        )
+
+    try:
+        # 检测是否已在运行中的事件循环中；是的话不能调 asyncio.run
+        try:
+            asyncio.get_running_loop()
+            in_loop = True
+        except RuntimeError:
+            in_loop = False
+
+        if in_loop:
+            # 同步上下文未预期在 loop 内，选择驳回降级避免阻塞
+            print("[chunk] _chunk_agentic invoked inside running loop, fallback to structure")
+            return _chunk_structure(text, min_t, max_t)
+        return asyncio.run(_runner())
+    except Exception as e:
+        print(f"[chunk] agentic chunking failed, fallback to structure: {e}")
+        return _chunk_structure(text, min_t, max_t)
+
+
 def _chunk_with_size(text: str, min_t: int, max_t: int) -> List[str]:
     """统一分块入口：根据 CHUNK_STRATEGY 路由。
 
+    - strategy=agentic   → LLM 智能分块（同步包装，内部 asyncio.run）
     - strategy=semantic  → 语义分块（与结构感知互斥）
     - strategy=structure → 结构感知分块
     - strategy=fixed     → 保持原有逻辑：structure_aware=True 且为 Markdown 时走结构感知，
                           否则走句子级。这里保持与原代码完全一致的行为，向后兼容。
     """
+    if CHUNK_STRATEGY == "agentic":
+        return _chunk_agentic(text, min_t, max_t)
     if CHUNK_STRATEGY == "semantic":
         return _chunk_semantic(text, min_t, max_t)
     if CHUNK_STRATEGY == "structure":
@@ -1180,12 +1255,12 @@ def toggle_dynamic_top_k(enabled: bool):
 
 # ================= CHUNK STRATEGY (RUNTIME SWITCH) =================
 class ChunkStrategyRequest(BaseModel):
-    strategy: str  # fixed | structure | semantic
+    strategy: str  # fixed | structure | semantic | agentic
 
 
 @app.get("/config/chunk-strategy")
 def get_chunk_strategy():
-    """查询当前分块策略及语义分块参数。"""
+    """查询当前分块策略及语义/agentic 分块参数。"""
     return {
         "strategy": CHUNK_STRATEGY,
         "valid": sorted(_VALID_CHUNK_STRATEGIES),
@@ -1195,12 +1270,16 @@ def get_chunk_strategy():
             "min_chunk_size": SEMANTIC_MIN_CHUNK_SIZE,
             "max_chunk_size": SEMANTIC_MAX_CHUNK_SIZE,
         },
+        "agentic": {
+            "generate_summary": AGENTIC_GENERATE_SUMMARY,
+            "max_llm_input_tokens": AGENTIC_MAX_LLM_INPUT_TOKENS,
+        },
     }
 
 
 @app.put("/config/chunk-strategy")
 def update_chunk_strategy(body: ChunkStrategyRequest):
-    """运行时切换分块策略：fixed | structure | semantic。
+    """运行时切换分块策略：fixed | structure | semantic | agentic。
 
     仅影响后续新入库的文档，已入库的 chunk 不会被重新分块。
     """

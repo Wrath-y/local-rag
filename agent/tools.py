@@ -54,15 +54,16 @@ TOOLS = [
         "description": (
             "Switch the document chunking strategy used for future ingestions. "
             "Choices: 'fixed' (sentence-level fixed size), 'structure' (Markdown structure-aware), "
-            "'semantic' (embedding-similarity based). Only affects newly ingested documents; "
-            "already-ingested chunks are not re-chunked."
+            "'semantic' (embedding-similarity based), 'agentic' (LLM-driven smart chunking with "
+            "per-chunk summary; higher cost, best for high-value documents). "
+            "Only affects newly ingested documents; already-ingested chunks are not re-chunked."
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "strategy": {
                     "type": "string",
-                    "enum": ["fixed", "structure", "semantic"],
+                    "enum": ["fixed", "structure", "semantic", "agentic"],
                     "description": "The chunking strategy to activate.",
                 }
             },
@@ -136,13 +137,16 @@ async def execute_tool(name: str, args: dict) -> str:
             r.raise_for_status()
             data = r.json()
             sem = data.get("semantic", {})
+            ag = data.get("agentic", {})
             return (
                 f"Current strategy: {data.get('strategy')} "
                 f"(valid: {data.get('valid')}); "
                 f"structure_aware={data.get('structure_aware')}; "
                 f"semantic.threshold_percentile={sem.get('threshold_percentile')}, "
                 f"min_chunk_size={sem.get('min_chunk_size')}, "
-                f"max_chunk_size={sem.get('max_chunk_size')}"
+                f"max_chunk_size={sem.get('max_chunk_size')}; "
+                f"agentic.generate_summary={ag.get('generate_summary')}, "
+                f"max_llm_input_tokens={ag.get('max_llm_input_tokens')}"
             )
 
     raise ValueError(f"Unknown tool: {name}")
