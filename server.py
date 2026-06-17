@@ -35,6 +35,10 @@ CHUNK_MIN = config["chunk"]["min_tokens"]
 CHUNK_MAX = config["chunk"]["max_tokens"]
 # 是否启用结构感知（Markdown）分块；非 Markdown 文本仍走原有的句子级逻辑
 STRUCTURE_AWARE_CHUNK = bool(config["chunk"].get("structure_aware", True))
+# 层次化（Parent-Child）分块配置：FAISS 检索 child（小块），命中后返回 parent（大块）给 LLM
+_hier_cfg = config["chunk"].get("hierarchical", {}) or {}
+HIERARCHICAL_ENABLED: bool = bool(_hier_cfg.get("enabled", False))
+PARENT_MAX_TOKENS: int = int(_hier_cfg.get("parent_max_tokens", 800))
 TOP_K = config["retrieve"]["top_k"]
 CONTEXT_WINDOW = config["retrieve"].get("context_window", 180000)
 RESPONSE_RESERVE = config["retrieve"].get("response_reserve", 8000)
@@ -657,24 +661,12 @@ def save_store(new_index=None, new_chunks=None, *, wal_offset: int = 0, wal_seq:
 
 
 # ================= CHUNK =================
-def chunk_text(text: str) -> List[str]:
-    # 优先尝试结构感知（Markdown）分块：检测到 Markdown 标志时使用 chunk_markdown
-    if STRUCTURE_AWARE_CHUNK:
-        try:
-            from markdown_chunker import chunk_markdown, looks_like_markdown
-            if looks_like_markdown(text):
-                md_chunks = chunk_markdown(text, CHUNK_MIN, CHUNK_MAX)
-                if md_chunks:
-                    return md_chunks
-                # 未产出有效 chunk 时回退到原句子级逻辑
-        except Exception:
-            # 结构感知分块出现异常时不影响主流程，回退到原逻辑
-            pass
-
+def _chunk_plain_text(text: str, min_t: int, max_t: int) -> List[str]:
+    """句子级分块（参数化版本），为原 chunk_text 主流程与层次化分块共用。"""
     sentences = re.split(r'(?<=[。！？.!?\n])\s*', text)
     sentences = [s.strip() for s in sentences if s.strip()]
 
-    chunks = []
+    chunks: List[str] = []
     current: List[str] = []
     current_len = 0
 
@@ -683,8 +675,8 @@ def chunk_text(text: str) -> List[str]:
         chunks.append("".join(current))
         overlap = current[-OVERLAP_SENTENCES:]
         overlap_len = sum(len(s) for s in overlap)
-        # overlap 本身超过 CHUNK_MAX 时丢弃，避免下一句立即触发溢出导致重复输出
-        if overlap_len >= CHUNK_MAX:
+        # overlap 本身超过 max_t 时丢弃，避免下一句立即触发溢出导致重复输出
+        if overlap_len >= max_t:
             current = []
             current_len = 0
         else:
@@ -696,19 +688,77 @@ def chunk_text(text: str) -> List[str]:
         cjk = sum(1 for c in sentence if '\u4e00' <= c <= '\u9fff')
         est_tokens = cjk + max(1, (len(sentence) - cjk) // 4)
 
-        if current_len + est_tokens > CHUNK_MAX and current:
+        if current_len + est_tokens > max_t and current:
             flush()
 
         current.append(sentence)
         current_len += est_tokens
 
-        if current_len >= CHUNK_MIN:
+        if current_len >= min_t:
             flush()
 
     if current:
         chunks.append("".join(current))
 
     return [c for c in chunks if c.strip()]
+
+
+def _chunk_with_size(text: str, min_t: int, max_t: int) -> List[str]:
+    """统一分块入口：优先走结构感知（Markdown），其次走句子级。"""
+    if STRUCTURE_AWARE_CHUNK:
+        try:
+            from markdown_chunker import chunk_markdown, looks_like_markdown
+            if looks_like_markdown(text):
+                md_chunks = chunk_markdown(text, min_t, max_t)
+                if md_chunks:
+                    return md_chunks
+                # 未产出有效 chunk 时回退到原句子级逻辑
+        except Exception:
+            # 结构感知分块出现异常时不影响主流程，回退到句子级逻辑
+            pass
+    return _chunk_plain_text(text, min_t, max_t)
+
+
+def chunk_text(text: str) -> List[str]:
+    """原有分块入口：返回平坦的 chunk 字符串列表（使用配置中的 min/max）。"""
+    return _chunk_with_size(text, CHUNK_MIN, CHUNK_MAX)
+
+
+def chunk_text_hierarchical(
+    text: str,
+    min_tokens: Optional[int] = None,
+    max_tokens: Optional[int] = None,
+    parent_max_tokens: Optional[int] = None,
+) -> List[Dict]:
+    """层次化（Parent-Child）分块。
+
+    返回列表，每元素形如 ``{"text": child, "parent_text": parent_or_None, "parent_id": id_or_None}``：
+      - 先以 ``parent_max_tokens`` 为上限生成 parent chunks（大块，供 LLM 使用）；
+      - 再对每个 parent 按 ``min_tokens``/``max_tokens`` 拆为 child chunks（小块，供 FAISS 检索）；
+      - 若 parent 本身太小、拆不出多个 child，child 即为 parent 本身，此时 parent_text=None，避免冷数据冗余。
+    """
+    if not text or not text.strip():
+        return []
+
+    min_t = min_tokens if min_tokens is not None else CHUNK_MIN
+    max_t = max_tokens if max_tokens is not None else CHUNK_MAX
+    parent_max_t = parent_max_tokens if parent_max_tokens is not None else PARENT_MAX_TOKENS
+    # parent 下限设为 parent_max // 2，保证大块尺寸明显大于小块；防止小于 min_t
+    parent_min_t = max(min_t, parent_max_t // 2)
+
+    parents = _chunk_with_size(text, parent_min_t, parent_max_t)
+    results: List[Dict] = []
+    for parent in parents:
+        # parent_id 用 parent 文本的 md5 前 12 位：内容不变则 id 稳定，便于检索去重
+        parent_id = hashlib.md5(parent.encode("utf-8")).hexdigest()[:12]
+        children = _chunk_with_size(parent, min_t, max_t)
+        if len(children) <= 1:
+            # 边界：parent 本身已在 child 尺寸范围内，无需额外 parent 冷数据
+            results.append({"text": parent, "parent_text": None, "parent_id": None})
+        else:
+            for child in children:
+                results.append({"text": child, "parent_text": parent, "parent_id": parent_id})
+    return results
 
 
 # ================= HYBRID SEARCH =================
@@ -779,13 +829,28 @@ def _ingest_core(text: str, source: str) -> Dict:
         print(_t("ingest_skip", source=source))
         return {"status": "skip", "chunks_added": 0, "reason": "content unchanged"}
 
-    chunks = chunk_text(text)
     new_chunks = []
     local_chunk_set = set(chunk_set)
-    for c in chunks:
-        if c not in local_chunk_set:
-            local_chunk_set.add(c)
-            new_chunks.append({"text": c, "source": source, "source_hash": content_hash})
+    if HIERARCHICAL_ENABLED:
+        # 层次化模式：以 child 小块入 FAISS，parent_text 作为元数据随 chunk 存储
+        chunk_dicts = chunk_text_hierarchical(text)
+        for cd in chunk_dicts:
+            ct = cd["text"]
+            if ct in local_chunk_set:
+                continue
+            local_chunk_set.add(ct)
+            entry = {"text": ct, "source": source, "source_hash": content_hash}
+            # 仅在真有 parent_text 时写入字段，保持与旧 chunk 结构的向后兼容
+            if cd.get("parent_text"):
+                entry["parent_text"] = cd["parent_text"]
+                entry["parent_id"] = cd["parent_id"]
+            new_chunks.append(entry)
+    else:
+        chunks = chunk_text(text)
+        for c in chunks:
+            if c not in local_chunk_set:
+                local_chunk_set.add(c)
+                new_chunks.append({"text": c, "source": source, "source_hash": content_hash})
 
     if not new_chunks:
         _source_hashes[source] = content_hash
@@ -978,10 +1043,22 @@ def _retrieve_single(req: RetrieveRequest, t0_override: Optional[float]) -> Retr
         _stats["zero_hit_queries"] += 1
     _stats["total_chunks_returned"] += len(top_candidates)
 
-    results = [
-        f"[来源: {c['source']}]\n{c['text']}"
-        for _, c, _, _ in top_candidates
-    ]
+    results: List[str] = []
+    seen_parent_keys: set = set()
+    for _, c, _, _ in top_candidates:
+        src = c.get("source", "unknown")
+        parent_text = c.get("parent_text")
+        parent_id = c.get("parent_id")
+        if parent_text:
+            # 同一 parent 被多个 child 命中时去重，避免重复占用 LLM 上下文
+            key = (src, parent_id)
+            if key in seen_parent_keys:
+                continue
+            seen_parent_keys.add(key)
+            results.append(f"[来源: {src}]\n{parent_text}")
+        else:
+            # 向后兼容：旧 chunk 或未启用层次化时返回 chunk 自身文本
+            results.append(f"[来源: {src}]\n{c['text']}")
 
     latency_s = time.perf_counter() - t0
     metrics.retrieve_latency_seconds.observe(latency_s)
