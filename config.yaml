@@ -6,9 +6,19 @@ embedding:
   query_prefix: "查询："
 
 chunk:
+  # 顶层分块策略选择器：
+  #   fixed     —— 句子级固定大小分块（默认，向后兼容）
+  #   structure —— 结构感知分块（Markdown 表格/代码块/列表原子完整）
+  #   semantic  —— 语义分块：基于 embedding 余弦相似度在语义断裂处切分
+  strategy: "fixed"
   min_tokens: 200
   max_tokens: 400
-  structure_aware: true   # 启用结构感知分块（Markdown 表格/代码块/列表保持原子完整）
+  structure_aware: true   # 当 strategy=fixed 时仍然控制是否对 Markdown 启用结构感知（向后兼容）
+  semantic:
+    enabled: false           # 是否启用语义分块（仅作为提示，最终以 strategy=semantic 为准）
+    threshold_percentile: 90 # 断裂阈值百分位：仅在相似度低于第 (100-N) 百分位处切分（越大越粗，90≈10%位置切）
+    min_chunk_size: 2        # 最小 chunk 包含句子数
+    max_chunk_size: 20       # 最大 chunk 包含句子数
   hierarchical:
     enabled: false           # 默认关闭，开启后启用 Parent-Child 层次化分块
     parent_max_tokens: 800   # parent chunk 的最大 token 数（child 用于检索，命中后返回 parent 给 LLM）

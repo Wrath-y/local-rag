@@ -49,6 +49,31 @@ TOOLS = [
             "required": ["source"],
         },
     },
+    {
+        "name": "set_chunk_strategy",
+        "description": (
+            "Switch the document chunking strategy used for future ingestions. "
+            "Choices: 'fixed' (sentence-level fixed size), 'structure' (Markdown structure-aware), "
+            "'semantic' (embedding-similarity based). Only affects newly ingested documents; "
+            "already-ingested chunks are not re-chunked."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "strategy": {
+                    "type": "string",
+                    "enum": ["fixed", "structure", "semantic"],
+                    "description": "The chunking strategy to activate.",
+                }
+            },
+            "required": ["strategy"],
+        },
+    },
+    {
+        "name": "get_chunk_strategy",
+        "description": "Get the current document chunking strategy and related parameters.",
+        "parameters": {"type": "object", "properties": {}},
+    },
 ]
 
 
@@ -86,5 +111,38 @@ async def execute_tool(name: str, args: dict) -> str:
             r = await client.delete(f"{_BASE}/source", params={"source": args["source"]})
             r.raise_for_status()
             return r.json().get("message", f"Source '{args['source']}' deleted.")
+
+        if name == "set_chunk_strategy":
+            strategy = (args.get("strategy") or "").strip().lower()
+            r = await client.put(
+                f"{_BASE}/config/chunk-strategy",
+                json={"strategy": strategy},
+            )
+            if r.status_code >= 400:
+                # 透传后端的验证错误信息为自然语言，便于 agent 重试或向用户解释
+                try:
+                    detail = r.json().get("detail", r.text)
+                except Exception:
+                    detail = r.text
+                return f"Failed to set chunk strategy: {detail}"
+            data = r.json()
+            return (
+                f"Chunk strategy set to '{data.get('strategy')}'. "
+                f"{data.get('note', '')}".strip()
+            )
+
+        if name == "get_chunk_strategy":
+            r = await client.get(f"{_BASE}/config/chunk-strategy")
+            r.raise_for_status()
+            data = r.json()
+            sem = data.get("semantic", {})
+            return (
+                f"Current strategy: {data.get('strategy')} "
+                f"(valid: {data.get('valid')}); "
+                f"structure_aware={data.get('structure_aware')}; "
+                f"semantic.threshold_percentile={sem.get('threshold_percentile')}, "
+                f"min_chunk_size={sem.get('min_chunk_size')}, "
+                f"max_chunk_size={sem.get('max_chunk_size')}"
+            )
 
     raise ValueError(f"Unknown tool: {name}")

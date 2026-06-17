@@ -33,8 +33,19 @@ with open(os.path.join(_dir, "config.yaml"), "r") as f:
 MODEL_NAME = config["model"]["name"]
 CHUNK_MIN = config["chunk"]["min_tokens"]
 CHUNK_MAX = config["chunk"]["max_tokens"]
+# 顶层分块策略：fixed | structure | semantic（运行时可通过 /config/chunk-strategy 切换）
+_VALID_CHUNK_STRATEGIES = {"fixed", "structure", "semantic"}
+CHUNK_STRATEGY: str = str(config["chunk"].get("strategy", "fixed")).lower()
+if CHUNK_STRATEGY not in _VALID_CHUNK_STRATEGIES:
+    print(f"[chunk] invalid strategy {CHUNK_STRATEGY!r} in config, falling back to 'fixed'")
+    CHUNK_STRATEGY = "fixed"
 # 是否启用结构感知（Markdown）分块；非 Markdown 文本仍走原有的句子级逻辑
 STRUCTURE_AWARE_CHUNK = bool(config["chunk"].get("structure_aware", True))
+# 语义分块参数（仅在 strategy=semantic 时生效）
+_sem_cfg = config["chunk"].get("semantic", {}) or {}
+SEMANTIC_THRESHOLD_PERCENTILE: int = int(_sem_cfg.get("threshold_percentile", 90))
+SEMANTIC_MIN_CHUNK_SIZE: int = int(_sem_cfg.get("min_chunk_size", 2))
+SEMANTIC_MAX_CHUNK_SIZE: int = int(_sem_cfg.get("max_chunk_size", 20))
 # 层次化（Parent-Child）分块配置：FAISS 检索 child（小块），命中后返回 parent（大块）给 LLM
 _hier_cfg = config["chunk"].get("hierarchical", {}) or {}
 HIERARCHICAL_ENABLED: bool = bool(_hier_cfg.get("enabled", False))
@@ -708,8 +719,65 @@ def _chunk_plain_text(text: str, min_t: int, max_t: int) -> List[str]:
     return [c for c in chunks if c.strip()]
 
 
+def _semantic_encode_fn(texts: List[str]) -> np.ndarray:
+    """封装 model.encode 供 semantic_chunker 注入使用，返回归一化 embedding。"""
+    return np.asarray(
+        model.encode(texts, normalize_embeddings=True, show_progress_bar=False),
+        dtype=np.float32,
+    )
+
+
+def _chunk_semantic(text: str, min_t: int, max_t: int) -> List[str]:
+    """调用语义分块；异常或未产出结果时回退到句子级分块。"""
+    try:
+        from semantic_chunker import semantic_chunk
+        chunks = semantic_chunk(
+            text,
+            encode_fn=_semantic_encode_fn,
+            threshold_percentile=SEMANTIC_THRESHOLD_PERCENTILE,
+            min_chunk_size=SEMANTIC_MIN_CHUNK_SIZE,
+            max_chunk_size=SEMANTIC_MAX_CHUNK_SIZE,
+            min_tokens=min_t,
+            max_tokens=max_t,
+        )
+        if chunks:
+            return chunks
+    except Exception as e:
+        print(f"[chunk] semantic chunking failed, fallback to plain: {e}")
+    return _chunk_plain_text(text, min_t, max_t)
+
+
+def _chunk_structure(text: str, min_t: int, max_t: int) -> List[str]:
+    """结构感知分块：Markdown 走 markdown_chunker，非 Markdown 回退到句子级。"""
+    try:
+        from markdown_chunker import chunk_markdown, looks_like_markdown
+        if looks_like_markdown(text):
+            md_chunks = chunk_markdown(
+                text, min_t, max_t,
+                context_prefix_enabled=CONTEXT_PREFIX_ENABLED,
+                context_prefix_max_depth=CONTEXT_PREFIX_MAX_DEPTH,
+                context_prefix_format=CONTEXT_PREFIX_FORMAT,
+            )
+            if md_chunks:
+                return md_chunks
+    except Exception:
+        pass
+    return _chunk_plain_text(text, min_t, max_t)
+
+
 def _chunk_with_size(text: str, min_t: int, max_t: int) -> List[str]:
-    """统一分块入口：优先走结构感知（Markdown），其次走句子级。"""
+    """统一分块入口：根据 CHUNK_STRATEGY 路由。
+
+    - strategy=semantic  → 语义分块（与结构感知互斥）
+    - strategy=structure → 结构感知分块
+    - strategy=fixed     → 保持原有逻辑：structure_aware=True 且为 Markdown 时走结构感知，
+                          否则走句子级。这里保持与原代码完全一致的行为，向后兼容。
+    """
+    if CHUNK_STRATEGY == "semantic":
+        return _chunk_semantic(text, min_t, max_t)
+    if CHUNK_STRATEGY == "structure":
+        return _chunk_structure(text, min_t, max_t)
+    # fixed（默认）：保持原有双条件的分发逻辑
     if STRUCTURE_AWARE_CHUNK:
         try:
             from markdown_chunker import chunk_markdown, looks_like_markdown
@@ -1108,6 +1176,47 @@ def toggle_dynamic_top_k(enabled: bool):
     global dynamic_top_k_enabled
     dynamic_top_k_enabled = enabled
     return {"dynamic_top_k_enabled": dynamic_top_k_enabled}
+
+
+# ================= CHUNK STRATEGY (RUNTIME SWITCH) =================
+class ChunkStrategyRequest(BaseModel):
+    strategy: str  # fixed | structure | semantic
+
+
+@app.get("/config/chunk-strategy")
+def get_chunk_strategy():
+    """查询当前分块策略及语义分块参数。"""
+    return {
+        "strategy": CHUNK_STRATEGY,
+        "valid": sorted(_VALID_CHUNK_STRATEGIES),
+        "structure_aware": STRUCTURE_AWARE_CHUNK,
+        "semantic": {
+            "threshold_percentile": SEMANTIC_THRESHOLD_PERCENTILE,
+            "min_chunk_size": SEMANTIC_MIN_CHUNK_SIZE,
+            "max_chunk_size": SEMANTIC_MAX_CHUNK_SIZE,
+        },
+    }
+
+
+@app.put("/config/chunk-strategy")
+def update_chunk_strategy(body: ChunkStrategyRequest):
+    """运行时切换分块策略：fixed | structure | semantic。
+
+    仅影响后续新入库的文档，已入库的 chunk 不会被重新分块。
+    """
+    global CHUNK_STRATEGY
+    s = (body.strategy or "").strip().lower()
+    if s not in _VALID_CHUNK_STRATEGIES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"invalid strategy: {body.strategy!r}; valid: {sorted(_VALID_CHUNK_STRATEGIES)}",
+        )
+    CHUNK_STRATEGY = s
+    structured_log("chunk_strategy_changed", strategy=s)
+    return {
+        "strategy": CHUNK_STRATEGY,
+        "note": "仅影响后续入库的文档；已入库 chunk 不变",
+    }
 
 
 # ================= QUERY REWRITE TOGGLE =================
