@@ -12,7 +12,7 @@
 [![MCP](https://img.shields.io/badge/MCP-Supported-blueviolet?style=flat-square)](https://modelcontextprotocol.io/)
 [![Agent](https://img.shields.io/badge/Agent-ReAct-orange?style=flat-square)]()
 
-[Installation](#installation) · [Usage](#usage) · [LLM Configuration](#llm-configuration) · [Agent Mode](#agent-mode) · [MCP Integration](#mcp-integration) · [Command Reference](#command-reference) · [How It Works](#how-it-works-how-the-prompt-is-modified) · [FAQ](#faq)
+[Installation](#installation) · [Usage](#usage) · [LLM Configuration](#llm-configuration) · [Agent Mode](#agent-mode) · [MCP Integration](#mcp-integration) · [Configuration](#configuration) · [Chunking Strategies](#chunking-strategies) · [Command Reference](#command-reference) · [How It Works](#how-it-works-how-the-prompt-is-modified) · [FAQ](#faq)
 
 📖 [中文文档](README_zh.md)
 
@@ -65,7 +65,7 @@ start.bat
 The script automatically installs dependencies, registers Hooks, and starts the service. When you see the following message, the setup is complete:
 
 ```
-安装完成！重启 Claude Code 后即可开箱即用。
+Setup complete! Restart Claude Code to start using it.
 ```
 
 **Restart Claude Code to start using it.**
@@ -374,7 +374,7 @@ Final chunks injected into system prompt
 ```
 Raw text (pasted / file / URL / Feishu doc)
     ↓
-Chunk splitting (sentence boundaries, 200–400 tokens/chunk, 2-sentence overlap between adjacent chunks)
+Chunk splitting (strategy-based: fixed / structure / semantic / agentic)
     ↓
 Embedding cache hit? → Yes: reuse vector; No: encode with BGE model
     ↓
@@ -459,8 +459,12 @@ Edit `config.yaml` to tune parameters:
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
+| `chunk.strategy` | `fixed` | Chunking strategy: `fixed` / `structure` / `semantic` / `agentic` — see [Chunking Strategies](#chunking-strategies) |
 | `chunk.min_tokens` | `200` | Minimum tokens per chunk |
 | `chunk.max_tokens` | `400` | Maximum tokens per chunk |
+| `chunk.structure_aware` | `true` | Markdown structure-aware splitting (only effective when `strategy=fixed`, kept for back-compat) |
+| `chunk.hierarchical.enabled` | `false` | Enable Parent-Child hierarchical chunks (orthogonal to `strategy`) |
+| `chunk.context_prefix.enabled` | `false` | Prepend heading breadcrumb to each chunk (orthogonal to `strategy`) |
 | `retrieve.top_k` | `3` | Number of chunks returned per retrieval |
 | `log.lang` | `en` | Log language: `zh` (Chinese) or `en` (English) |
 | `retrieve.verbose` | `true` | Enable retrieval logs |
@@ -495,6 +499,77 @@ Common alternatives:
 | `BAAI/bge-m3` | 1024 | Multilingual | Best for mixed Chinese/English, slower |
 | `sentence-transformers/all-MiniLM-L6-v2` | 384 | English | Generic English; clear both prefixes |
 
+### Chunking Strategies
+
+The project ships four chunking strategies. Switch via `chunk.strategy` in `config.yaml`, or at runtime through the HTTP API / Agent tools — only newly ingested documents are affected, already-stored chunks are not re-processed.
+
+| Strategy | How It Works | Best For |
+|----------|--------------|----------|
+| `fixed` (default) | Sentence-boundary splitting, 200–400 tokens per chunk, 2-sentence overlap | General purpose, fastest path, no LLM cost |
+| `structure` | Markdown structure-aware: tables / fenced code blocks / lists stay atomic, splits prefer heading boundaries | Technical docs, API references, structured Markdown |
+| `semantic` | Embeds every sentence and splits at points where adjacent similarity drops below a configurable percentile | Long-form prose with topic shifts |
+| `agentic` | An LLM analyses the document and decides chunk boundaries; can prepend a one-line summary per chunk | High-value documents where retrieval precision outweighs ingestion cost |
+
+Two orthogonal enhancements can be layered on top of any strategy:
+
+- **Hierarchical (Parent-Child)** — child chunks are used for retrieval; on hit, the larger parent chunk is returned to the LLM, keeping recall precision while expanding context.
+- **Context Prefix (breadcrumb)** — propagates the heading path (e.g. `[Guide > Auth > Bearer]`) as a prefix on every chunk, so an isolated chunk still carries its hierarchical position.
+
+Full configuration with defaults:
+
+```yaml
+chunk:
+  strategy: "fixed"             # fixed | structure | semantic | agentic (default: fixed)
+  min_tokens: 200               # default: 200
+  max_tokens: 400               # default: 400
+  structure_aware: true         # default: true; only applies when strategy=fixed (back-compat)
+  hierarchical:
+    enabled: false              # default: false
+    parent_max_tokens: 800      # default: 800
+  context_prefix:
+    enabled: false              # default: false
+    format: "breadcrumb"        # default: "breadcrumb" (only value supported today)
+    max_depth: 3                # default: 3
+  semantic:
+    threshold_percentile: 90    # default: 90; lower → more, smaller chunks
+    min_chunk_size: 2           # default: 2 sentences
+    max_chunk_size: 20          # default: 20 sentences
+  agentic:
+    enabled: false              # hint flag; actual switch is `strategy: agentic`
+    generate_summary: true      # default: true; prepend an LLM-generated one-line summary
+    max_llm_input_tokens: 4000  # default: 4000; long docs are processed in segments
+```
+
+**Runtime switching (no restart required)**
+
+```bash
+# Query the current strategy
+curl http://127.0.0.1:8765/config/chunk-strategy
+
+# Switch strategy at runtime
+curl -X PUT http://127.0.0.1:8765/config/chunk-strategy \
+  -H "Content-Type: application/json" \
+  -d '{"strategy": "structure"}'
+```
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /config/chunk-strategy` | Return the current strategy and its parameters |
+| `PUT /config/chunk-strategy` | Switch strategy at runtime (`fixed` / `structure` / `semantic` / `agentic`) |
+
+**Agent tools**
+
+In Agent mode the same operations are exposed as natural-language tools:
+
+| Tool | Description |
+|------|-------------|
+| `set_chunk_strategy` | Switch the active chunking strategy (`fixed` / `structure` / `semantic` / `agentic`) |
+| `get_chunk_strategy` | Report the current strategy and its parameters |
+
+Example: saying *"switch to semantic chunking"* lets the agent pick `set_chunk_strategy` and apply the change.
+
+> Switching strategies only affects subsequent ingestions. To re-chunk existing documents under a new strategy, run `/rag-update` per source (or `/rag-reset` followed by re-ingestion).
+
 ### Why Is `top_k` 3 by Default?
 
 `top_k = 3` balances **recall** against **token cost**:
@@ -520,6 +595,9 @@ claude-local-rag/
 ├── mcp_server.py               # MCP stdio server (Claude Code / Codex integration)
 ├── mcp_tools.py                # MCP tool implementations
 ├── query_rewrite.py            # Query rewriting strategies (expansion / HyDE / multi_query)
+├── markdown_chunker.py         # Structure-aware Markdown chunker
+├── semantic_chunker.py         # Embedding-similarity based semantic chunker
+├── agentic_chunker.py          # LLM-driven intelligent chunker
 ├── config.yaml                 # Configuration file
 ├── requirements.txt            # Python dependencies
 ├── setup_hook.py               # Cross-platform Hook registration (called by start.sh / start.bat)
@@ -564,7 +642,8 @@ claude-local-rag/
 - [x] Cross-Encoder Rerank
 - [x] Query Rewriting (expansion / HyDE / multi-query strategies)
 - [ ] Chunk head/tail overlap — prevent semantic truncation at boundaries
-- [ ] Semantic chunking (split on paragraph/topic boundaries instead of sentence boundaries)
+- [x] Pluggable chunking strategies (`fixed` / `structure` / `semantic` / `agentic`) with runtime switching
+- [x] Hierarchical (Parent-Child) chunks and breadcrumb context prefix as orthogonal enhancements
 - [x] Dynamic top_k (auto-adjust based on remaining context window)
 
 **Knowledge Base Management**

@@ -12,7 +12,7 @@
 [![MCP](https://img.shields.io/badge/MCP-Supported-blueviolet?style=flat-square)](https://modelcontextprotocol.io/)
 [![Agent](https://img.shields.io/badge/Agent-ReAct-orange?style=flat-square)]()
 
-[安装](#安装) · [使用方法](#使用方法) · [LLM 配置](#llm-配置) · [Agent 模式](#agent-模式) · [MCP 接入](#mcp-接入) · [工作原理](#工作原理prompt-是如何被修改的) · [命令汇总](#命令汇总) · [常见问题](#常见问题)
+[安装](#安装) · [使用方法](#使用方法) · [LLM 配置](#llm-配置) · [Agent 模式](#agent-模式) · [MCP 接入](#mcp-接入) · [配置](#配置) · [分块策略](#分块策略) · [工作原理](#工作原理prompt-是如何被修改的) · [命令汇总](#命令汇总) · [常见问题](#常见问题)
 
 📖 [English Documentation](README.md)
 
@@ -374,7 +374,7 @@ UserPromptSubmit Hook（hook_script.py）
 ```
 原始文本（粘贴 / 文件 / URL / 飞书文档）
     ↓
-Chunk 切分（按句子边界，200–400 token/块，相邻块保留 2 句重叠）
+Chunk 切分（按策略选择：fixed / structure / semantic / agentic）
     ↓
 Embedding 缓存命中？→ 是：直接复用向量；否：调用 BGE 模型编码
     ↓
@@ -459,8 +459,12 @@ type %TEMP%\claude-local-rag.log             # 查看运行日志
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
+| `chunk.strategy` | `fixed` | 分块策略：`fixed` / `structure` / `semantic` / `agentic`，详见[分块策略](#分块策略) |
 | `chunk.min_tokens` | `200` | 每段最小长度 |
 | `chunk.max_tokens` | `400` | 每段最大长度 |
+| `chunk.structure_aware` | `true` | Markdown 结构感知切分（仅在 `strategy=fixed` 时生效，向后兼容） |
+| `chunk.hierarchical.enabled` | `false` | 是否启用 Parent-Child 层次化分块（与 `strategy` 正交） |
+| `chunk.context_prefix.enabled` | `false` | 是否在每个 chunk 前附加标题面包屑（与 `strategy` 正交） |
 | `retrieve.top_k` | `3` | 检索返回的段落数 |
 | `log.lang` | `zh` | 日志语言：`zh`（中文）或 `en`（English） |
 | `retrieve.verbose` | `true` | 是否输出检索日志 |
@@ -495,6 +499,77 @@ embedding:
 | `BAAI/bge-m3` | 1024 | 多语言 | 中英混合文档首选，速度较慢 |
 | `sentence-transformers/all-MiniLM-L6-v2` | 384 | 英文 | 通用英文，非 BGE，prefix 需清空 |
 
+### 分块策略
+
+项目内置四种分块策略，通过 `config.yaml` 中的 `chunk.strategy` 选择，也可在运行时通过 HTTP API / Agent 工具切换 —— 切换只影响后续新入库的文档，已入库 chunk 不会被重新分块。
+
+| 策略 | 原理 | 适用场景 |
+|------|------|----------|
+| `fixed`（默认） | 按句子边界切分，每块 200–400 token，相邻块保留 2 句重叠 | 通用场景，无 LLM 成本，路径最快 |
+| `structure` | Markdown 结构感知：表格 / 代码块 / 列表保持原子完整，优先在标题边界切分 | 技术文档、API 文档、结构化 Markdown |
+| `semantic` | 对每个句子计算 embedding，在相邻相似度低于设定百分位处切分 | 长篇散文或主题切换明显的内容 |
+| `agentic` | 由 LLM 分析文档结构并决定分块边界，可附加一句话摘要前缀 | 高价值文档，对检索精度的诉求高于入库成本 |
+
+两个正交增强可与任意策略叠加：
+
+- **层次化分块（Parent-Child）** —— 用 child chunk 做检索，命中后将更大的 parent chunk 返回给 LLM，兼顾召回精度与上下文完整度。
+- **上下文前缀（breadcrumb）** —— 将所在的标题层级（形如 `[指南 > 鉴权 > Bearer]`）作为前缀附加到每个 chunk 文本之前，孤立的 chunk 也能保留所处位置。
+
+完整配置项及默认值：
+
+```yaml
+chunk:
+  strategy: "fixed"             # fixed | structure | semantic | agentic（默认：fixed）
+  min_tokens: 200               # 默认：200
+  max_tokens: 400               # 默认：400
+  structure_aware: true         # 默认：true；仅在 strategy=fixed 时生效（向后兼容）
+  hierarchical:
+    enabled: false              # 默认：false
+    parent_max_tokens: 800      # 默认：800
+  context_prefix:
+    enabled: false              # 默认：false
+    format: "breadcrumb"        # 默认："breadcrumb"（当前仅支持此值）
+    max_depth: 3                # 默认：3
+  semantic:
+    threshold_percentile: 90    # 默认：90；越小 → 切得越碎
+    min_chunk_size: 2           # 默认：2（句）
+    max_chunk_size: 20          # 默认：20（句）
+  agentic:
+    enabled: false              # 提示位；最终以 strategy=agentic 为准
+    generate_summary: true      # 默认：true；让 LLM 生成一句话摘要并附加为前缀
+    max_llm_input_tokens: 4000  # 默认：4000；超长文档按段调用
+```
+
+**运行时切换（无需重启）**
+
+```bash
+# 查询当前策略
+curl http://127.0.0.1:8765/config/chunk-strategy
+
+# 切换策略
+curl -X PUT http://127.0.0.1:8765/config/chunk-strategy \
+  -H "Content-Type: application/json" \
+  -d '{"strategy": "structure"}'
+```
+
+| 端点 | 说明 |
+|------|------|
+| `GET /config/chunk-strategy` | 返回当前分块策略及参数 |
+| `PUT /config/chunk-strategy` | 运行时切换策略（`fixed` / `structure` / `semantic` / `agentic`） |
+
+**Agent 工具**
+
+Agent 模式下提供同名的自然语言工具：
+
+| 工具 | 说明 |
+|------|------|
+| `set_chunk_strategy` | 切换当前分块策略（`fixed` / `structure` / `semantic` / `agentic`） |
+| `get_chunk_strategy` | 查询当前分块策略及相关参数 |
+
+示例：直接对 Agent 说「切换为语义分块」，Agent 会调用 `set_chunk_strategy` 完成切换。
+
+> 切换策略仅影响后续入库的文档。若希望对已有文档使用新策略，需对相应来源执行 `/rag-update`（或 `/rag-reset` 后重新入库）。
+
 ### 为什么 top_k 默认是 3？
 
 `top_k = 3` 是在**召回率**与 **token 成本**之间取得平衡的经验值：
@@ -520,6 +595,9 @@ claude-local-rag/
 ├── mcp_server.py               # MCP stdio server（Claude Code / Codex 集成）
 ├── mcp_tools.py                # MCP 工具实现
 ├── query_rewrite.py            # 查询改写策略（expansion / HyDE / multi_query）
+├── markdown_chunker.py         # Markdown 结构感知分块器
+├── semantic_chunker.py         # 基于 embedding 相似度的语义分块器
+├── agentic_chunker.py          # LLM 驱动的智能分块器
 ├── config.yaml                 # 配置文件
 ├── requirements.txt            # Python 依赖
 ├── setup_hook.py               # 跨平台 Hook 注册脚本（由 start.sh / start.bat 调用）
@@ -564,7 +642,8 @@ claude-local-rag/
 - [x] Cross-Encoder Rerank 精排
 - [x] 查询改写（expansion / HyDE / multi_query 三种策略）
 - [ ] Chunk 首尾重叠（overlap），避免语义在边界处截断
-- [ ] 语义切分（按段落/主题边界，替代当前句子边界切分）
+- [x] 可插拔分块策略（`fixed` / `structure` / `semantic` / `agentic`），支持运行时切换
+- [x] 层次化分块（Parent-Child）与标题面包屑前缀作为正交增强
 - [x] 动态 top_k（根据剩余上下文窗口自动调整返回数量）
 
 **知识库管理**
