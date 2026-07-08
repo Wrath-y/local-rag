@@ -29,3 +29,13 @@ venv/
 # 开发计划
 docs
 openspec
+
+# Go build artifacts
+rag-server
+.rag-server.pid
+data/
+backups/
+
+# Python sidecar
+sidecar/.venv/
+sidecar/models/

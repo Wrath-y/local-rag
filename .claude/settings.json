@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 .claude/hook_script.py",
+            "command": "bash .claude/hook.sh",
             "statusMessage": "RAG 检索中..."
           }
         ]
