@@ -1,0 +1,327 @@
+package handler
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/gin-gonic/gin"
+
+	"github.com/Wrath-y/local-rag/internal/chunk"
+	"github.com/Wrath-y/local-rag/internal/config"
+	"github.com/Wrath-y/local-rag/internal/observe"
+	"github.com/Wrath-y/local-rag/internal/store"
+)
+
+func init() {
+	gin.SetMode(gin.TestMode)
+	observe.InitMetrics()
+}
+
+// ---------------------------------------------------------------------------
+// Mock implementations
+// ---------------------------------------------------------------------------
+
+type mockEmbedder struct {
+	vecs [][]float32
+	err  error
+	dims int
+}
+
+func (m *mockEmbedder) Embed(_ context.Context, texts []string) ([][]float32, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	out := make([][]float32, len(texts))
+	for i := range texts {
+		if i < len(m.vecs) {
+			out[i] = m.vecs[i]
+		} else {
+			// Return a zero vector of the right dimension.
+			d := m.dims
+			if d == 0 {
+				d = 4
+			}
+			out[i] = make([]float32, d)
+		}
+	}
+	return out, nil
+}
+
+func (m *mockEmbedder) Dims() int {
+	if m.dims == 0 {
+		return 4
+	}
+	return m.dims
+}
+
+type mockChunker struct {
+	chunks []chunk.Chunk
+	err    error
+}
+
+func (m *mockChunker) Chunk(text, source string) ([]chunk.Chunk, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	if m.chunks != nil {
+		return m.chunks, nil
+	}
+	return []chunk.Chunk{{Text: text, Source: source, MD5: "abc123"}}, nil
+}
+
+// ---------------------------------------------------------------------------
+// Test helpers
+// ---------------------------------------------------------------------------
+
+func testDeps(t *testing.T, st *store.Store) Deps {
+	t.Helper()
+	cfg := &config.Config{
+		Retrieve: config.RetrieveConfig{
+			TopK:                3,
+			CandidateMultiplier: 2,
+			RerankCandidates:    9,
+			ContextWindow:       180000,
+			ResponseReserve:     8000,
+			ScoreWeights:        config.ScoreWeights{Vector: 0.7, BM25: 0.3},
+		},
+		Chunk: config.ChunkConfig{Strategy: "fixed"},
+	}
+	return Deps{
+		Config:   cfg,
+		Store:    st,
+		Embedder: &mockEmbedder{dims: 4},
+		Chunker:  &mockChunker{},
+	}
+}
+
+func newTestStore(t *testing.T) *store.Store {
+	t.Helper()
+	st, err := store.New(t.TempDir()+"/test.db", 4)
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	return st
+}
+
+// ---------------------------------------------------------------------------
+// TestIngest_Success
+// ---------------------------------------------------------------------------
+
+func TestIngest_Success(t *testing.T) {
+	st := newTestStore(t)
+	h := New(testDeps(t, st))
+
+	body, _ := json.Marshal(map[string]string{
+		"text":   "Hello world, this is a test document.",
+		"source": "test-src",
+	})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodPost, "/ingest", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.Ingest(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["status"] != "ok" && resp["status"] != "skip" {
+		t.Errorf("unexpected status: %v", resp["status"])
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TestIngest_MissingText
+// ---------------------------------------------------------------------------
+
+func TestIngest_MissingText(t *testing.T) {
+	st := newTestStore(t)
+	h := New(testDeps(t, st))
+
+	body, _ := json.Marshal(map[string]string{"source": "x"})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodPost, "/ingest", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.Ingest(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TestRetrieve_EmptyStore
+// ---------------------------------------------------------------------------
+
+func TestRetrieve_EmptyStore(t *testing.T) {
+	st := newTestStore(t)
+	h := New(testDeps(t, st))
+
+	body, _ := json.Marshal(map[string]string{"text": "what is redis?"})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodPost, "/retrieve", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.Retrieve(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := resp["chunks"]; !ok {
+		t.Error("response missing 'chunks' key")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TestRetrieve_MissingText
+// ---------------------------------------------------------------------------
+
+func TestRetrieve_MissingText(t *testing.T) {
+	st := newTestStore(t)
+	h := New(testDeps(t, st))
+
+	body, _ := json.Marshal(map[string]string{})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodPost, "/retrieve", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.Retrieve(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TestHealth_ReturnsOK
+// ---------------------------------------------------------------------------
+
+func TestHealth_ReturnsOK(t *testing.T) {
+	st := newTestStore(t)
+	h := New(testDeps(t, st))
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodGet, "/health", nil)
+
+	h.Health(c)
+
+	// With a mock embedder that always succeeds, we expect 200 ok.
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["status"] != "ok" && resp["status"] != "degraded" {
+		t.Errorf("unexpected status: %v", resp["status"])
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TestRerankToggle
+// ---------------------------------------------------------------------------
+
+func TestRerankToggle(t *testing.T) {
+	st := newTestStore(t)
+	h := New(testDeps(t, st))
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodPost, "/config/rerank", nil)
+
+	h.RerankToggle(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := resp["rerank_enabled"]; !ok {
+		t.Error("missing rerank_enabled field")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TestSetChunkStrategy_Invalid
+// ---------------------------------------------------------------------------
+
+func TestSetChunkStrategy_Invalid(t *testing.T) {
+	st := newTestStore(t)
+	h := New(testDeps(t, st))
+
+	body, _ := json.Marshal(map[string]string{"strategy": "unknown_mode"})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodPut, "/config/chunk-strategy", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.SetChunkStrategy(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TestListSources_Empty
+// ---------------------------------------------------------------------------
+
+func TestListSources_Empty(t *testing.T) {
+	st := newTestStore(t)
+	h := New(testDeps(t, st))
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodGet, "/sources", nil)
+
+	h.ListSources(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TestStats
+// ---------------------------------------------------------------------------
+
+func TestStats(t *testing.T) {
+	st := newTestStore(t)
+	h := New(testDeps(t, st))
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodGet, "/stats", nil)
+
+	h.Stats(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+}
