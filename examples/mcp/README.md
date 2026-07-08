@@ -1,144 +1,124 @@
-# Local RAG — MCP Server Example
+# Local RAG — MCP 接入指南
 
-This example shows how other AI agents can use the Local RAG knowledge base via [MCP (Model Context Protocol)](https://modelcontextprotocol.io/).
+本项目的主服务 `rag-server` 内置 MCP (Model Context Protocol) 支持，其他 Agent 可通过 stdio 直接调用 RAG 能力。
 
-> **Note:** The main `rag-server` binary has **built-in MCP support** via `./rag-server mcp`.
-> This example (`examples/mcp/`) is a standalone alternative that connects to the HTTP API
-> instead — useful when the RAG service is already running as a daemon.
+## 快速开始
 
-## Two ways to use MCP
+### 1. 编译
 
-### Option 1: Built-in (recommended)
+```bash
+cd /path/to/local-rag
+go build -o rag-server ./cmd/server/
+```
 
-The main binary directly serves MCP over stdio — no HTTP in the middle:
+### 2. 配置 Agent
+
+在 Agent 的 MCP 配置中添加：
+
+**Claude Code** (`.claude/settings.json` 或 `~/.claude/settings.json`)：
 
 ```json
 {
   "mcpServers": {
     "local-rag": {
-      "command": "/path/to/local-rag/rag-server",
+      "command": "/absolute/path/to/local-rag/rag-server",
       "args": ["mcp"]
     }
   }
 }
 ```
 
-### Option 2: Standalone proxy (this example)
-
-A separate lightweight binary that proxies MCP calls to the running HTTP service:
+**Cursor** (`.cursor/mcp.json`)：
 
 ```json
 {
   "mcpServers": {
     "local-rag": {
-      "command": "/path/to/local-rag/examples/mcp/rag-mcp-server"
+      "command": "/absolute/path/to/local-rag/rag-server",
+      "args": ["mcp"]
     }
   }
 }
 ```
 
-## Architecture Comparison
+**其他 MCP 兼容 Agent**：
+
+任何支持 MCP stdio transport 的 Agent 均可接入，命令为 `rag-server mcp`。
+
+### 3. 使用
+
+配置完成后重启 Agent，即可在对话中调用 RAG 工具。
+
+---
+
+## 架构
 
 ```
-Option 1 (built-in):
-Agent → stdio → rag-server mcp → [internal function calls] → SQLite
-
-Option 2 (proxy):
-Agent → stdio → rag-mcp-server → HTTP → rag-server → SQLite
+Agent (Claude Code / Cursor / ...)
+  ↓ stdio (JSON-RPC)
+rag-server mcp
+  ↓ 直接调用内部函数（无 HTTP）
+SQLite (vec0 + FTS5)
 ```
 
-Option 1 is faster (no network hop) and simpler (single binary).
-Option 2 is useful when the RAG service is shared across multiple clients.
+MCP 模式直接调用内部服务（store、embedder、chunker），无 HTTP 中间层，延迟最低。
 
-## Build (this example)
+---
 
-## Build
+## 环境变量
 
-```bash
-cd /path/to/local-rag
-go build -o examples/mcp/rag-mcp-server ./examples/mcp/
-```
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `RAG_CONFIG` | `config.yaml` | 配置文件路径 |
 
-## Prerequisites
+---
 
-The RAG service must be running:
+## 可用 Tools
 
-```bash
-./start.sh
-```
+| Tool | 说明 | 参数 |
+|------|------|------|
+| `rag_ingest` | 存入知识库 | `text` (必填), `source` (可选, 默认 "manual") |
+| `rag_retrieve` | 语义+关键词混合检索 | `query` (必填), `top_k` (可选) |
+| `rag_list_sources` | 列出所有来源 | 无 |
+| `rag_delete_source` | 按来源删除 | `source` (必填) |
+| `rag_status` | 服务状态 + chunk 总数 | 无 |
 
-## Configure in Claude Code
+---
 
-Add to your project's `.claude/settings.json` (or `~/.claude/settings.json` for global):
-
-```json
-{
-  "mcpServers": {
-    "local-rag": {
-      "command": "/absolute/path/to/local-rag/examples/mcp/rag-mcp-server"
-    }
-  }
-}
-```
-
-## Configure in Cursor
-
-Add to `.cursor/mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "local-rag": {
-      "command": "/absolute/path/to/local-rag/examples/mcp/rag-mcp-server"
-    }
-  }
-}
-```
-
-## Configure in Other Agents
-
-Any MCP-compatible agent can connect. The server uses stdio transport (standard JSON-RPC over stdin/stdout).
-
-## Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `RAG_BASE_URL` | `http://127.0.0.1:8765` | RAG service base URL |
-
-## Available Tools
-
-| Tool | Description |
-|------|-------------|
-| `rag_ingest` | Ingest text into the knowledge base |
-| `rag_retrieve` | Semantic + keyword hybrid search |
-| `rag_list_sources` | List all sources and chunk counts |
-| `rag_delete_source` | Delete chunks by source |
-| `rag_status` | Service health and stats |
-
-## Tool Usage Examples
+## 调用示例
 
 ### rag_ingest
 
 ```json
 {
-  "text": "Redis cache penetration occurs when...",
+  "text": "Redis 缓存穿透是指查询一个不存在的 key，请求直接打到数据库...",
   "source": "redis-guide"
 }
 ```
+
+响应：`Ingested 3 chunks from source "redis-guide".`
 
 ### rag_retrieve
 
 ```json
 {
-  "query": "How to handle cache penetration?",
+  "query": "缓存穿透怎么处理",
   "top_k": 5
 }
 ```
+
+响应：返回最相关的文档片段，附带来源标识。
 
 ### rag_list_sources
 
 ```json
 {}
+```
+
+响应：
+```
+- redis-guide: 3 chunks
+- api-spec: 12 chunks
 ```
 
 ### rag_delete_source
@@ -149,25 +129,34 @@ Any MCP-compatible agent can connect. The server uses stdio transport (standard 
 }
 ```
 
+响应：`Deleted 3 chunks from source "redis-guide".`
+
 ### rag_status
 
 ```json
 {}
 ```
 
-## How It Works
+响应：`RAG Status: OK | Total chunks: 15`
 
-1. Agent sends an MCP `tools/call` request via stdio
-2. This server parses the request, calls the RAG HTTP API
-3. Response is formatted as MCP `TextContent` and returned to the agent
-4. If the RAG service is unavailable, the tool returns an error message (doesn't crash)
+---
 
-## Development
+## 与 HTTP 模式的关系
 
-Run directly (for testing):
+| 模式 | 命令 | 用途 |
+|------|------|------|
+| HTTP（默认） | `./rag-server` | Hook 自动检索、浏览器/脚本访问、多客户端共享 |
+| MCP | `./rag-server mcp` | Agent 直接调用，无网络开销 |
 
-```bash
-go run ./examples/mcp/
-```
+两种模式使用相同的配置文件和数据库，可以并行运行（HTTP 守护进程 + 按需启动的 MCP 实例）。
 
-The server will wait for MCP JSON-RPC messages on stdin. You can test with the MCP inspector or any MCP client.
+---
+
+## 生命周期
+
+MCP 模式的进程生命周期由 Agent 管理：
+- Agent 启动时 spawn `rag-server mcp` 子进程
+- Agent 关闭/断开时进程自动退出
+- 无需 `start.sh` / `stop.sh`
+
+首次使用前需确保已编译二进制并安装好 Python sidecar（运行一次 `./start.sh` 即可完成）。
