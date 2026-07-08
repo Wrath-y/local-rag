@@ -61,7 +61,7 @@ async def _ensure_fastapi_running() -> None:
 
     raise RuntimeError(
         f"RAG server failed to start within {_SERVER_STARTUP_TIMEOUT}s. "
-        "Check /tmp/claude-local-rag.log for details."
+        "Check /tmp/local-rag.log for details."
     )
 
 

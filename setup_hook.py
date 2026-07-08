@@ -51,16 +51,16 @@ def _t(key: str, **kwargs) -> str:
     return template.format(**kwargs) if kwargs else template
 
 
-# Windows: %TEMP%\claude-local-rag.log  /  Unix: /tmp/claude-local-rag.log
+# Windows: %TEMP%\local-rag.log  /  Unix: /tmp/local-rag.log
 if sys.platform == "win32":
-    LOG_PATH = os.path.join(os.environ.get("TEMP", "C:\\Temp"), "claude-local-rag.log")
+    LOG_PATH = os.path.join(os.environ.get("TEMP", "C:\\Temp"), "local-rag.log")
     # Windows 下用 pythonw 后台启动服务
     HOOK_CMD = (
         f"curl -s http://127.0.0.1:8765/health > nul 2>&1 || "
         f"start /B pythonw -m uvicorn server:app --app-dir \"{SCRIPT_DIR}\" --port 8765 >> \"{LOG_PATH}\" 2>&1"
     )
 else:
-    LOG_PATH = "/tmp/claude-local-rag.log"
+    LOG_PATH = "/tmp/local-rag.log"
     HOOK_CMD = (
         f"curl -s http://127.0.0.1:8765/health > /dev/null 2>&1 || "
         f"(cd \"{SCRIPT_DIR}\" && nohup uvicorn server:app --port 8765 >> {LOG_PATH} 2>&1 &)"
@@ -87,12 +87,12 @@ def register_hook(settings):
     hooks = settings.setdefault("hooks", {})
     session_start = hooks.setdefault("SessionStart", [])
 
-    # 移除已有的 claude-local-rag hook（幂等）
+    # 移除已有的 local-rag hook（幂等）
     cleaned = []
     for group in session_start:
         group_hooks = [
             h for h in group.get("hooks", [])
-            if "claude-local-rag" not in h.get("command", "")
+            if "local-rag" not in h.get("command", "")
         ]
         if group_hooks:
             cleaned.append({**group, "hooks": group_hooks})

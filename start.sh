@@ -25,12 +25,12 @@ if [ "$LANG_CODE" = "en" ]; then
   M_SVC_RUNNING="  Service already running, skipping"
   M_LOADING="  Loading embedding model, please wait..."
   M_SVC_OK="  Service started (%ds) → http://127.0.0.1:8765"
-  M_SVC_EXITED="  Service process exited. Check logs: tail -f /tmp/claude-local-rag.log"
+  M_SVC_EXITED="  Service process exited. Check logs: tail -f /tmp/local-rag.log"
   M_WAITING="  Waiting... %ds"
-  M_TIMEOUT="  Timeout (%ds). Check logs: tail -f /tmp/claude-local-rag.log"
+  M_TIMEOUT="  Timeout (%ds). Check logs: tail -f /tmp/local-rag.log"
   M_DONE="Setup complete! Restart Claude Code to start using it."
   M_USAGE="  /rag <content or URL>   — ingest into vector store"
-  M_LOG="  Logs: tail -f /tmp/claude-local-rag.log"
+  M_LOG="  Logs: tail -f /tmp/local-rag.log"
   M_MCP_HINT="  MCP integration — add to ~/.claude/settings.json:"
   M_MCP_CFG='  { "mcpServers": { "rag": { "command": "python", "args": ["'"$SCRIPT_DIR"'/mcp_server.py"] } } }'
 else
@@ -47,12 +47,12 @@ else
   M_SVC_RUNNING="  服务已在运行，跳过启动"
   M_LOADING="  正在加载 embedding 模型，请稍候..."
   M_SVC_OK="  服务启动成功（%ds）→ http://127.0.0.1:8765"
-  M_SVC_EXITED="  服务进程已退出，请查看日志：tail -f /tmp/claude-local-rag.log"
+  M_SVC_EXITED="  服务进程已退出，请查看日志：tail -f /tmp/local-rag.log"
   M_WAITING="  等待中... %ds"
-  M_TIMEOUT="  超时（%ds），请查看日志：tail -f /tmp/claude-local-rag.log"
+  M_TIMEOUT="  超时（%ds），请查看日志：tail -f /tmp/local-rag.log"
   M_DONE="安装完成！重启 Claude Code 后即可开箱即用。"
   M_USAGE="  /rag <内容或飞书链接>   — 存入向量库"
-  M_LOG="  日志：tail -f /tmp/claude-local-rag.log"
+  M_LOG="  日志：tail -f /tmp/local-rag.log"
   M_MCP_HINT="  MCP 接入 — 将以下内容添加到 ~/.claude/settings.json："
   M_MCP_CFG='  { "mcpServers": { "rag": { "command": "python", "args": ["'"$SCRIPT_DIR"'/mcp_server.py"] } } }'
 fi
@@ -90,7 +90,7 @@ if curl -s http://127.0.0.1:8765/health > /dev/null 2>&1; then
   echo "$M_SVC_RUNNING"
 else
   cd "$SCRIPT_DIR"
-  nohup uvicorn server:app --port 8765 >> /tmp/claude-local-rag.log 2>&1 &
+  nohup uvicorn server:app --port 8765 >> /tmp/local-rag.log 2>&1 &
   SERVER_PID=$!
 
   echo "$M_LOADING"

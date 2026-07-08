@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🧠 Claude Local RAG
+# 🧠 Local RAG
 
 **Give Claude Code persistent long-term memory — retrieve knowledge precisely from your own documents**
 
@@ -49,16 +49,16 @@ Claude Code has no built-in vector database. Its native memory system is file-ba
 **macOS / Linux**
 
 ```bash
-git clone https://github.com/Wrath-y/claude-local-rag
-cd claude-local-rag
+git clone https://github.com/Wrath-y/local-rag
+cd local-rag
 ./start.sh
 ```
 
 **Windows** (Command Prompt / PowerShell, run as Administrator)
 
 ```bat
-git clone https://github.com/Wrath-y/claude-local-rag
-cd claude-local-rag
+git clone https://github.com/Wrath-y/local-rag
+cd local-rag
 start.bat
 ```
 
@@ -389,7 +389,7 @@ Persist (index.bin + chunks.pkl)
 
 ```bash
 /rag-verbose on    # Enable detailed logging
-tail -f /tmp/claude-local-rag.log
+tail -f /tmp/local-rag.log
 ```
 
 ```
@@ -440,7 +440,7 @@ v2.3.0 added an IP allowlist check to /orders. Non-allowlisted IPs also return 4
 ```bash
 ./start.sh                          # Install dependencies + start service
 ./stop.sh                           # Stop service
-tail -f /tmp/claude-local-rag.log   # View logs
+tail -f /tmp/local-rag.log   # View logs
 ```
 
 **Windows**
@@ -448,7 +448,7 @@ tail -f /tmp/claude-local-rag.log   # View logs
 ```bat
 start.bat                                    # Install dependencies + start service
 stop.bat                                     # Stop service
-type %TEMP%\claude-local-rag.log             # View logs
+type %TEMP%\local-rag.log             # View logs
 ```
 
 ---
@@ -590,7 +590,7 @@ Example: saying *"switch to semantic chunking"* lets the agent pick `set_chunk_s
 ## Project Structure
 
 ```
-claude-local-rag/
+local-rag/
 ├── server.py                   # FastAPI backend service
 ├── mcp_server.py               # MCP stdio server (Claude Code / Codex integration)
 ├── mcp_tools.py                # MCP tool implementations
@@ -685,7 +685,7 @@ Restart Claude Code and make sure you have run `./start.sh` (or `start.bat` on W
 Run `./start.sh` to restart the service, or check the logs:
 
 ```bash
-tail -f /tmp/claude-local-rag.log
+tail -f /tmp/local-rag.log
 ```
 </details>
 
