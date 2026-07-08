@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"github.com/Wrath-y/local-rag/internal/chunk"
 	"github.com/Wrath-y/local-rag/internal/config"
 	"github.com/Wrath-y/local-rag/internal/handler"
+	"github.com/Wrath-y/local-rag/internal/mcpserver"
 	"github.com/Wrath-y/local-rag/internal/observe"
 	"github.com/Wrath-y/local-rag/internal/provider"
 	"github.com/Wrath-y/local-rag/internal/sidecar"
@@ -29,6 +31,12 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to load config %q: %v\n", cfgPath, err)
 		os.Exit(1)
+	}
+
+	// MCP mode: run as MCP server over stdio (no HTTP, no gin)
+	if len(os.Args) > 1 && os.Args[1] == "mcp" {
+		runMCP(cfg)
+		return
 	}
 
 	observe.InitLogger(cfg.Log.Level, cfg.Log.Format)
@@ -151,6 +159,62 @@ func main() {
 	slog.Info("server starting", "addr", addr)
 	if err := r.Run(addr); err != nil {
 		slog.Error("server error", "err", err)
+		os.Exit(1)
+	}
+}
+
+// runMCP starts the server in MCP (Model Context Protocol) mode.
+// It communicates over stdin/stdout using JSON-RPC, NOT HTTP.
+// Other agents (Claude Code, Cursor, etc.) connect to this directly.
+func runMCP(cfg *config.Config) {
+	// In MCP mode, only log errors to stderr (stdout is the protocol channel).
+	observe.InitLogger("error", "text")
+
+	// Start sidecar if needed.
+	sc := sidecar.New(sidecar.Config{
+		Provider:       cfg.Embedding.Provider,
+		Port:           cfg.Sidecar.Port,
+		HealthInterval: time.Duration(cfg.Sidecar.HealthInterval) * time.Second,
+		HealthRetries:  cfg.Sidecar.HealthRetries,
+		StartupTimeout: time.Duration(cfg.Sidecar.StartupTimeout) * time.Second,
+	})
+	if err := sc.Start(); err != nil {
+		fmt.Fprintf(os.Stderr, "sidecar start failed: %v\n", err)
+		os.Exit(1)
+	}
+	defer sc.Stop()
+
+	// Init providers.
+	embedder, err := provider.NewEmbedProvider(cfg.Embedding, sc.URL())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "embed provider: %v\n", err)
+		os.Exit(1)
+	}
+	reranker, _ := provider.NewRerankProvider(cfg.Rerank, sc.URL())
+	llm, _ := provider.NewLLMProvider(cfg.LLM)
+
+	// Init store.
+	st, err := store.New(cfg.Storage.DBPath, cfg.Embedding.Dims)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "store init: %v\n", err)
+		os.Exit(1)
+	}
+	defer st.Close()
+
+	// Init chunker.
+	chunker := chunk.NewChunker(cfg.Chunk, embedder, llm)
+
+	// Run MCP server (blocks until client disconnects).
+	deps := mcpserver.Deps{
+		Config:   cfg,
+		Store:    st,
+		Embedder: embedder,
+		Reranker: reranker,
+		LLM:      llm,
+		Chunker:  chunker,
+	}
+	if err := mcpserver.Run(context.Background(), deps); err != nil {
+		fmt.Fprintf(os.Stderr, "MCP server error: %v\n", err)
 		os.Exit(1)
 	}
 }

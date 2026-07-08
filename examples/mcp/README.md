@@ -2,17 +2,55 @@
 
 This example shows how other AI agents can use the Local RAG knowledge base via [MCP (Model Context Protocol)](https://modelcontextprotocol.io/).
 
-## Architecture
+> **Note:** The main `rag-server` binary has **built-in MCP support** via `./rag-server mcp`.
+> This example (`examples/mcp/`) is a standalone alternative that connects to the HTTP API
+> instead — useful when the RAG service is already running as a daemon.
+
+## Two ways to use MCP
+
+### Option 1: Built-in (recommended)
+
+The main binary directly serves MCP over stdio — no HTTP in the middle:
+
+```json
+{
+  "mcpServers": {
+    "local-rag": {
+      "command": "/path/to/local-rag/rag-server",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+### Option 2: Standalone proxy (this example)
+
+A separate lightweight binary that proxies MCP calls to the running HTTP service:
+
+```json
+{
+  "mcpServers": {
+    "local-rag": {
+      "command": "/path/to/local-rag/examples/mcp/rag-mcp-server"
+    }
+  }
+}
+```
+
+## Architecture Comparison
 
 ```
-Your Agent (Claude Code, Cursor, etc.)
-    ↓ MCP (stdio, JSON-RPC)
-rag-mcp-server (this binary)
-    ↓ HTTP
-Local RAG Service (:8765)
+Option 1 (built-in):
+Agent → stdio → rag-server mcp → [internal function calls] → SQLite
+
+Option 2 (proxy):
+Agent → stdio → rag-mcp-server → HTTP → rag-server → SQLite
 ```
 
-The MCP server is a thin wrapper — each tool call translates to an HTTP request against the running RAG service.
+Option 1 is faster (no network hop) and simpler (single binary).
+Option 2 is useful when the RAG service is shared across multiple clients.
+
+## Build (this example)
 
 ## Build
 
