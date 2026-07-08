@@ -1,0 +1,315 @@
+package config
+
+import (
+	"fmt"
+	"os"
+
+	"gopkg.in/yaml.v3"
+)
+
+// Config is the top-level configuration structure.
+type Config struct {
+	Server       ServerConfig      `yaml:"server"`
+	Embedding    EmbeddingConfig   `yaml:"embedding"`
+	Rerank       RerankConfig      `yaml:"rerank"`
+	LLM          LLMConfig         `yaml:"llm"`
+	Chunk        ChunkConfig       `yaml:"chunk"`
+	Retrieve     RetrieveConfig    `yaml:"retrieve"`
+	QueryRewrite QueryRewriteConfig `yaml:"query_rewrite"`
+	Storage      StorageConfig     `yaml:"storage"`
+	Sidecar      SidecarConfig     `yaml:"sidecar"`
+	Log          LogConfig         `yaml:"log"`
+}
+
+// ServerConfig holds HTTP server settings.
+type ServerConfig struct {
+	Port int `yaml:"port"`
+}
+
+// EmbeddingConfig holds embedding model settings.
+type EmbeddingConfig struct {
+	Provider    string `yaml:"provider"`
+	Model       string `yaml:"model"`
+	Dims        int    `yaml:"dims"`
+	DocPrefix   string `yaml:"doc_prefix"`
+	QueryPrefix string `yaml:"query_prefix"`
+	APIKeyEnv   string `yaml:"api_key_env"`
+	BaseURL     string `yaml:"base_url"`
+}
+
+// RerankConfig holds reranker model settings.
+type RerankConfig struct {
+	Provider  string `yaml:"provider"`
+	Model     string `yaml:"model"`
+	APIKeyEnv string `yaml:"api_key_env"`
+	BaseURL   string `yaml:"base_url"`
+}
+
+// LLMConfig holds LLM provider settings.
+type LLMConfig struct {
+	Provider   string `yaml:"provider"`
+	Model      string `yaml:"model"`
+	APIKeyEnv  string `yaml:"api_key_env"`
+	Timeout    int    `yaml:"timeout"`
+	MaxRetries int    `yaml:"max_retries"`
+}
+
+// ChunkConfig holds document chunking settings.
+type ChunkConfig struct {
+	Strategy      string              `yaml:"strategy"`
+	MinTokens     int                 `yaml:"min_tokens"`
+	MaxTokens     int                 `yaml:"max_tokens"`
+	Semantic      SemanticChunkConfig `yaml:"semantic"`
+	Agentic       AgenticChunkConfig  `yaml:"agentic"`
+	Hierarchical  HierarchicalConfig  `yaml:"hierarchical"`
+	ContextPrefix ContextPrefixConfig `yaml:"context_prefix"`
+}
+
+// SemanticChunkConfig holds semantic chunking settings.
+type SemanticChunkConfig struct {
+	ThresholdPercentile int `yaml:"threshold_percentile"`
+	MinChunkSize        int `yaml:"min_chunk_size"`
+	MaxChunkSize        int `yaml:"max_chunk_size"`
+}
+
+// AgenticChunkConfig holds agentic chunking settings.
+type AgenticChunkConfig struct {
+	GenerateSummary   bool `yaml:"generate_summary"`
+	MaxLLMInputTokens int  `yaml:"max_llm_input_tokens"`
+}
+
+// HierarchicalConfig holds hierarchical chunking settings.
+type HierarchicalConfig struct {
+	Enabled         bool `yaml:"enabled"`
+	ParentMaxTokens int  `yaml:"parent_max_tokens"`
+}
+
+// ContextPrefixConfig holds context prefix (breadcrumb) settings.
+type ContextPrefixConfig struct {
+	Enabled  bool   `yaml:"enabled"`
+	Format   string `yaml:"format"`
+	MaxDepth int    `yaml:"max_depth"`
+}
+
+// RetrieveConfig holds retrieval settings.
+type RetrieveConfig struct {
+	TopK                int          `yaml:"top_k"`
+	CandidateMultiplier int          `yaml:"candidate_multiplier"`
+	RerankCandidates    int          `yaml:"rerank_candidates"`
+	Verbose             bool         `yaml:"verbose"`
+	DynamicTopK         bool         `yaml:"dynamic_top_k"`
+	ContextWindow       int          `yaml:"context_window"`
+	ResponseReserve     int          `yaml:"response_reserve"`
+	ScoreWeights        ScoreWeights `yaml:"score_weights"`
+}
+
+// ScoreWeights holds the blend weights for hybrid search.
+type ScoreWeights struct {
+	Vector float64 `yaml:"vector"`
+	BM25   float64 `yaml:"bm25"`
+}
+
+// QueryRewriteConfig holds query-rewriting settings.
+type QueryRewriteConfig struct {
+	Enabled  bool   `yaml:"enabled"`
+	Strategy string `yaml:"strategy"`
+	Provider string `yaml:"provider"`
+}
+
+// StorageConfig holds persistence settings.
+type StorageConfig struct {
+	DBPath string       `yaml:"db_path"`
+	Backup BackupConfig `yaml:"backup"`
+}
+
+// BackupConfig holds backup schedule and retention settings.
+type BackupConfig struct {
+	Enabled   bool            `yaml:"enabled"`
+	Schedule  string          `yaml:"schedule"`
+	Retention RetentionConfig `yaml:"retention"`
+}
+
+// RetentionConfig holds backup retention policy.
+type RetentionConfig struct {
+	Days  int `yaml:"days"`
+	Weeks int `yaml:"weeks"`
+}
+
+// SidecarConfig holds sidecar process settings.
+type SidecarConfig struct {
+	Port           int `yaml:"port"`
+	HealthInterval int `yaml:"health_interval"`
+	HealthRetries  int `yaml:"health_retries"`
+	StartupTimeout int `yaml:"startup_timeout"`
+}
+
+// LogConfig holds logging settings.
+type LogConfig struct {
+	Level  string `yaml:"level"`
+	Format string `yaml:"format"`
+	Lang   string `yaml:"lang"`
+}
+
+// Load reads a YAML config file from path and returns a populated Config.
+// Defaults are applied for any zero-value fields after parsing.
+func Load(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("config: read file %q: %w", path, err)
+	}
+
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("config: parse YAML %q: %w", path, err)
+	}
+
+	applyDefaults(&cfg)
+	return &cfg, nil
+}
+
+// applyDefaults fills in sensible defaults for any zero-value fields.
+func applyDefaults(cfg *Config) {
+	// Server
+	if cfg.Server.Port == 0 {
+		cfg.Server.Port = 8765
+	}
+
+	// Embedding
+	if cfg.Embedding.Provider == "" {
+		cfg.Embedding.Provider = "local"
+	}
+	if cfg.Embedding.Model == "" {
+		cfg.Embedding.Model = "BAAI/bge-small-zh-v1.5"
+	}
+	if cfg.Embedding.Dims == 0 {
+		cfg.Embedding.Dims = 512
+	}
+	if cfg.Embedding.DocPrefix == "" {
+		cfg.Embedding.DocPrefix = "段落："
+	}
+	if cfg.Embedding.QueryPrefix == "" {
+		cfg.Embedding.QueryPrefix = "查询："
+	}
+
+	// Rerank
+	if cfg.Rerank.Provider == "" {
+		cfg.Rerank.Provider = "local"
+	}
+	if cfg.Rerank.Model == "" {
+		cfg.Rerank.Model = "BAAI/bge-reranker-base"
+	}
+
+	// LLM
+	if cfg.LLM.Provider == "" {
+		cfg.LLM.Provider = "anthropic"
+	}
+	if cfg.LLM.Model == "" {
+		cfg.LLM.Model = "claude-sonnet-4-6"
+	}
+	if cfg.LLM.APIKeyEnv == "" {
+		cfg.LLM.APIKeyEnv = "ANTHROPIC_API_KEY"
+	}
+	if cfg.LLM.Timeout == 0 {
+		cfg.LLM.Timeout = 30
+	}
+	if cfg.LLM.MaxRetries == 0 {
+		cfg.LLM.MaxRetries = 2
+	}
+
+	// Chunk
+	if cfg.Chunk.Strategy == "" {
+		cfg.Chunk.Strategy = "fixed"
+	}
+	if cfg.Chunk.MinTokens == 0 {
+		cfg.Chunk.MinTokens = 200
+	}
+	if cfg.Chunk.MaxTokens == 0 {
+		cfg.Chunk.MaxTokens = 400
+	}
+	if cfg.Chunk.Semantic.ThresholdPercentile == 0 {
+		cfg.Chunk.Semantic.ThresholdPercentile = 90
+	}
+	if cfg.Chunk.Semantic.MinChunkSize == 0 {
+		cfg.Chunk.Semantic.MinChunkSize = 2
+	}
+	if cfg.Chunk.Semantic.MaxChunkSize == 0 {
+		cfg.Chunk.Semantic.MaxChunkSize = 20
+	}
+	if cfg.Chunk.Agentic.MaxLLMInputTokens == 0 {
+		cfg.Chunk.Agentic.MaxLLMInputTokens = 4000
+	}
+	if cfg.Chunk.Hierarchical.ParentMaxTokens == 0 {
+		cfg.Chunk.Hierarchical.ParentMaxTokens = 800
+	}
+	if cfg.Chunk.ContextPrefix.Format == "" {
+		cfg.Chunk.ContextPrefix.Format = "breadcrumb"
+	}
+	if cfg.Chunk.ContextPrefix.MaxDepth == 0 {
+		cfg.Chunk.ContextPrefix.MaxDepth = 3
+	}
+
+	// Retrieve
+	if cfg.Retrieve.TopK == 0 {
+		cfg.Retrieve.TopK = 3
+	}
+	if cfg.Retrieve.CandidateMultiplier == 0 {
+		cfg.Retrieve.CandidateMultiplier = 10
+	}
+	if cfg.Retrieve.RerankCandidates == 0 {
+		cfg.Retrieve.RerankCandidates = 9
+	}
+	if cfg.Retrieve.ContextWindow == 0 {
+		cfg.Retrieve.ContextWindow = 180000
+	}
+	if cfg.Retrieve.ResponseReserve == 0 {
+		cfg.Retrieve.ResponseReserve = 8000
+	}
+	if cfg.Retrieve.ScoreWeights.Vector == 0 && cfg.Retrieve.ScoreWeights.BM25 == 0 {
+		cfg.Retrieve.ScoreWeights.Vector = 0.7
+		cfg.Retrieve.ScoreWeights.BM25 = 0.3
+	}
+
+	// QueryRewrite
+	if cfg.QueryRewrite.Strategy == "" {
+		cfg.QueryRewrite.Strategy = "expansion"
+	}
+
+	// Storage
+	if cfg.Storage.DBPath == "" {
+		cfg.Storage.DBPath = "data/rag.db"
+	}
+	if cfg.Storage.Backup.Schedule == "" {
+		cfg.Storage.Backup.Schedule = "0 3 * * *"
+	}
+	if cfg.Storage.Backup.Retention.Days == 0 {
+		cfg.Storage.Backup.Retention.Days = 7
+	}
+	if cfg.Storage.Backup.Retention.Weeks == 0 {
+		cfg.Storage.Backup.Retention.Weeks = 4
+	}
+
+	// Sidecar
+	if cfg.Sidecar.Port == 0 {
+		cfg.Sidecar.Port = 8766
+	}
+	if cfg.Sidecar.HealthInterval == 0 {
+		cfg.Sidecar.HealthInterval = 10
+	}
+	if cfg.Sidecar.HealthRetries == 0 {
+		cfg.Sidecar.HealthRetries = 3
+	}
+	if cfg.Sidecar.StartupTimeout == 0 {
+		cfg.Sidecar.StartupTimeout = 30
+	}
+
+	// Log
+	if cfg.Log.Level == "" {
+		cfg.Log.Level = "info"
+	}
+	if cfg.Log.Format == "" {
+		cfg.Log.Format = "json"
+	}
+	if cfg.Log.Lang == "" {
+		cfg.Log.Lang = "en"
+	}
+}
