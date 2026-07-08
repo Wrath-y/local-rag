@@ -1,7 +1,156 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"log/slog"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/gin-gonic/gin"
+
+	"github.com/Wrath-y/local-rag/internal/chunk"
+	"github.com/Wrath-y/local-rag/internal/config"
+	"github.com/Wrath-y/local-rag/internal/handler"
+	"github.com/Wrath-y/local-rag/internal/observe"
+	"github.com/Wrath-y/local-rag/internal/provider"
+	"github.com/Wrath-y/local-rag/internal/sidecar"
+	"github.com/Wrath-y/local-rag/internal/store"
+)
 
 func main() {
-	fmt.Println("rag-server starting...")
+	cfgPath := "config.yaml"
+	if p := os.Getenv("RAG_CONFIG"); p != "" {
+		cfgPath = p
+	}
+
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to load config %q: %v\n", cfgPath, err)
+		os.Exit(1)
+	}
+
+	observe.InitLogger(cfg.Log.Level, cfg.Log.Format)
+
+	// Start sidecar (only used when embedding provider is "local").
+	sc := sidecar.New(sidecar.Config{
+		Provider:       cfg.Embedding.Provider,
+		Port:           cfg.Sidecar.Port,
+		HealthInterval: time.Duration(cfg.Sidecar.HealthInterval) * time.Second,
+		HealthRetries:  cfg.Sidecar.HealthRetries,
+		StartupTimeout: time.Duration(cfg.Sidecar.StartupTimeout) * time.Second,
+	})
+	if err := sc.Start(); err != nil {
+		slog.Error("sidecar start failed", "err", err)
+		os.Exit(1)
+	}
+	defer sc.Stop()
+
+	// Init providers.
+	embedder, err := provider.NewEmbedProvider(cfg.Embedding, sc.URL())
+	if err != nil {
+		slog.Error("embed provider init failed", "err", err)
+		os.Exit(1)
+	}
+
+	reranker, err := provider.NewRerankProvider(cfg.Rerank, sc.URL())
+	if err != nil {
+		slog.Error("rerank provider init failed", "err", err)
+		os.Exit(1)
+	}
+
+	// LLM provider is optional — log warning but continue if not configured.
+	llm, err := provider.NewLLMProvider(cfg.LLM)
+	if err != nil {
+		slog.Warn("LLM provider not available (agent and rewrite features disabled)", "err", err)
+		llm = nil
+	}
+
+	// Init store.
+	st, err := store.New(cfg.Storage.DBPath, cfg.Embedding.Dims)
+	if err != nil {
+		slog.Error("store init failed", "err", err)
+		os.Exit(1)
+	}
+	defer st.Close()
+
+	// Init chunker.
+	chunker := chunk.NewChunker(cfg.Chunk, embedder, llm)
+
+	// Build handler.
+	h := handler.New(handler.Deps{
+		Config:   cfg,
+		Store:    st,
+		Embedder: embedder,
+		Reranker: reranker,
+		LLM:      llm,
+		Chunker:  chunker,
+	})
+
+	// Gin router.
+	gin.SetMode(gin.ReleaseMode)
+	r := gin.New()
+	r.Use(gin.Recovery())
+
+	// Core routes.
+	r.POST("/ingest", h.Ingest)
+	r.POST("/retrieve", h.Retrieve)
+	r.POST("/hook", h.Hook)
+
+	// Toggle routes.
+	r.POST("/rerank/toggle", h.RerankToggle)
+	r.POST("/retrieve/verbose", h.VerboseToggle)
+	r.POST("/retrieve/dynamic-top-k", h.DynamicTopKToggle)
+	r.POST("/retrieve/query-rewrite", h.QueryRewriteToggle)
+
+	// Config routes.
+	r.GET("/config/chunk-strategy", h.GetChunkStrategy)
+	r.PUT("/config/chunk-strategy", h.SetChunkStrategy)
+
+	// Management routes.
+	r.GET("/sources", h.ListSources)
+	r.DELETE("/source", h.DeleteSource)
+	r.DELETE("/reset", h.Reset)
+	r.GET("/stats", h.Stats)
+	r.GET("/export", h.Export)
+	r.POST("/import", h.Import)
+
+	// Observability routes.
+	r.GET("/health", h.Health)
+	r.GET("/metrics", h.Metrics)
+	r.GET("/storage/integrity-check", h.IntegrityCheck)
+
+	// Backup routes.
+	r.POST("/backup/run", h.BackupRun)
+	r.GET("/backup/list", h.BackupList)
+	r.POST("/backup/restore", h.BackupRestore)
+
+	// Index routes.
+	r.POST("/index/rebuild", h.IndexRebuild)
+	r.GET("/index/status", h.IndexStatus)
+
+	// Agent routes.
+	r.POST("/agent/chat", h.AgentChat)
+	r.POST("/agent/session", h.AgentCreateSession)
+	r.GET("/agent/sessions", h.AgentListSessions)
+	r.DELETE("/agent/session/:id", h.AgentDeleteSession)
+
+	// Graceful shutdown.
+	go func() {
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+		<-sigCh
+		slog.Info("shutting down")
+		sc.Stop()
+		st.Close()
+		os.Exit(0)
+	}()
+
+	addr := fmt.Sprintf(":%d", cfg.Server.Port)
+	slog.Info("server starting", "addr", addr)
+	if err := r.Run(addr); err != nil {
+		slog.Error("server error", "err", err)
+		os.Exit(1)
+	}
 }
