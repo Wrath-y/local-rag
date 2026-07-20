@@ -8,17 +8,19 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"syscall"
 	"time"
 )
 
 // Config holds sidecar manager configuration.
 type Config struct {
-	Provider       string        // "local" means we need sidecar
-	Port           int
-	PythonPath     string        // path to sidecar/main.py
-	HealthInterval time.Duration
-	HealthRetries  int
-	StartupTimeout time.Duration
+	Provider        string        // "local" means we need sidecar
+	Port            int
+	PythonPath      string        // path to sidecar/main.py
+	HealthInterval  time.Duration
+	HealthRetries   int
+	StartupTimeout  time.Duration
+	ShutdownTimeout time.Duration // graceful-stop budget; defaults to 5s
 }
 
 // Manager manages the lifecycle of the Python sidecar process.
@@ -182,7 +184,9 @@ func (m *Manager) restart() {
 	slog.Info("sidecar restarted successfully")
 }
 
-// killProcess sends Kill to the subprocess if it is set.
+// killProcess sends SIGKILL to the subprocess if it is set.
+// Used for restart() and startup-failure cleanup where immediate
+// termination is intentional (no graceful-stop semantics needed).
 func (m *Manager) killProcess() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -195,7 +199,51 @@ func (m *Manager) killProcess() {
 	m.running = false
 }
 
-// Stop kills the sidecar process and halts the health loop.
+// stopGracefully sends SIGTERM and waits up to ShutdownTimeout for the
+// process to exit on its own.  If the process has not exited within the
+// timeout, SIGKILL is sent and we wait for the reap.
+//
+// The method acquires m.mu only to snapshot and clear m.cmd so that no
+// concurrent caller (e.g. healthLoop→restart) can double-Wait the same Cmd.
+func (m *Manager) stopGracefully() {
+	timeout := m.cfg.ShutdownTimeout
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+
+	// Snapshot and detach cmd under the lock so no other goroutine races
+	// a Wait on the same Cmd.
+	m.mu.Lock()
+	cmd := m.cmd
+	m.cmd = nil
+	m.running = false
+	m.mu.Unlock()
+
+	if cmd == nil || cmd.Process == nil {
+		return
+	}
+
+	// Send SIGTERM; ignore "process already finished" errors.
+	_ = cmd.Process.Signal(syscall.SIGTERM)
+
+	// Asynchronously wait; use a channel so we can select with a timer.
+	waitDone := make(chan error, 1)
+	go func() { waitDone <- cmd.Wait() }()
+
+	select {
+	case <-waitDone:
+		// Process exited cooperatively within the timeout.
+	case <-time.After(timeout):
+		// Timeout: escalate to SIGKILL.
+		slog.Warn("sidecar did not exit after SIGTERM; sending SIGKILL",
+			"shutdown_timeout", timeout)
+		_ = cmd.Process.Kill()
+		<-waitDone // must reap to avoid zombie
+	}
+}
+
+// Stop gracefully stops the sidecar and halts the health loop.
+// It is idempotent: calling it on a non-running Manager is a no-op.
 func (m *Manager) Stop() {
 	m.mu.Lock()
 	ch := m.stopCh
@@ -209,7 +257,7 @@ func (m *Manager) Stop() {
 		close(ch)
 	}
 
-	m.killProcess()
+	m.stopGracefully()
 }
 
 // Running returns whether the sidecar is considered alive.
