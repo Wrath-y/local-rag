@@ -1,0 +1,1030 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local RAG HTTP Test Client</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background-color: #1a1a1a;
+            color: #e0e0e0;
+            line-height: 1.5;
+            padding: 1rem;
+        }
+
+        header {
+            margin-bottom: 2rem;
+            text-align: center;
+            border-bottom: 2px solid #333;
+            padding-bottom: 1rem;
+        }
+
+        h1 {
+            font-size: 1.8rem;
+            margin-bottom: 0.5rem;
+            color: #ffffff;
+        }
+
+        .subtitle {
+            color: #888;
+            font-size: 0.9rem;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        main {
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+        }
+
+        @media (max-width: 760px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+
+            h1 {
+                font-size: 1.4rem;
+            }
+
+            body {
+                padding: 0.5rem;
+            }
+        }
+
+        .panel {
+            background-color: #242424;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .panel-full {
+            grid-column: 1 / -1;
+        }
+
+        .panel h2 {
+            font-size: 1.2rem;
+            margin-bottom: 1rem;
+            color: #ffffff;
+            border-bottom: 1px solid #444;
+            padding-bottom: 0.5rem;
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.4rem;
+            color: #b0b0b0;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        input[type="text"],
+        input[type="number"],
+        textarea {
+            width: 100%;
+            background-color: #1a1a1a;
+            border: 1px solid #444;
+            color: #e0e0e0;
+            padding: 0.7rem;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+        }
+
+        input[type="text"]:focus,
+        input[type="number"]:focus,
+        textarea:focus {
+            outline: none;
+            border-color: #0066cc;
+            box-shadow: 0 0 4px rgba(0, 102, 204, 0.3);
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+
+        button {
+            background-color: #0066cc;
+            color: #ffffff;
+            border: none;
+            padding: 0.7rem 1.5rem;
+            border-radius: 4px;
+            font-size: 0.95rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s, opacity 0.2s;
+        }
+
+        button:hover:not(:disabled) {
+            background-color: #0052a3;
+        }
+
+        button:active:not(:disabled) {
+            background-color: #003d7a;
+        }
+
+        button:disabled {
+            background-color: #444;
+            color: #888;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .status {
+            padding: 0.8rem;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+            border-left: 4px solid;
+        }
+
+        .status-idle {
+            background-color: #2a2a3a;
+            border-left-color: #666;
+            color: #999;
+        }
+
+        .status-ok {
+            background-color: #1a3a2a;
+            border-left-color: #00cc66;
+            color: #66ff99;
+        }
+
+        .status-error {
+            background-color: #3a1a1a;
+            border-left-color: #cc0000;
+            color: #ff6666;
+        }
+
+        .result {
+            background-color: #1a1a1a;
+            border: 1px solid #444;
+            border-radius: 4px;
+            padding: 1rem;
+            margin-top: 1rem;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            max-height: 300px;
+            overflow-y: auto;
+            word-wrap: break-word;
+            white-space: pre-wrap;
+        }
+
+        .result-empty {
+            color: #666;
+            font-style: italic;
+        }
+
+        .request-entry {
+            background-color: #1a1a1a;
+            border-left: 3px solid #0066cc;
+            padding: 0.8rem;
+            margin-bottom: 0.8rem;
+            border-radius: 2px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.8rem;
+            line-height: 1.4;
+        }
+
+        .request-entry.error {
+            border-left-color: #cc0000;
+        }
+
+        .request-entry.success {
+            border-left-color: #00cc66;
+        }
+
+        .request-timestamp {
+            color: #888;
+            font-size: 0.75rem;
+            margin-bottom: 0.3rem;
+        }
+
+        .request-method {
+            color: #0066cc;
+            font-weight: bold;
+        }
+
+        .request-method.post {
+            color: #ff9900;
+        }
+
+        .request-method.get {
+            color: #00cc66;
+        }
+
+        .chunk-card {
+            background-color: #1a1a1a;
+            border: 1px solid #444;
+            border-radius: 4px;
+            padding: 0.8rem;
+            margin-bottom: 0.8rem;
+            font-size: 0.9rem;
+        }
+
+        .chunk-card-title {
+            font-weight: bold;
+            color: #ffffff;
+            margin-bottom: 0.3rem;
+        }
+
+        .chunk-card-meta {
+            color: #888;
+            font-size: 0.8rem;
+            margin-top: 0.3rem;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #333;
+        }
+
+        .info-row:last-child {
+            border-bottom: none;
+        }
+
+        .info-label {
+            color: #888;
+            font-size: 0.9rem;
+        }
+
+        .info-value {
+            color: #e0e0e0;
+            font-weight: 500;
+        }
+
+        .grid-2-col {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+
+        @media (max-width: 760px) {
+            .grid-2-col {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .row-buttons {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+
+        @media (max-width: 760px) {
+            .row-buttons {
+                flex-direction: column;
+            }
+
+            button {
+                width: 100%;
+            }
+        }
+
+        .endpoint-label {
+            color: #888;
+            font-size: 0.85rem;
+            margin-bottom: 0.8rem;
+        }
+
+        .endpoint-code {
+            background: #1a1a1a;
+            padding: 0.2rem 0.5rem;
+        }
+
+        .section-title {
+            color: #b0b0b0;
+            font-size: 0.95rem;
+            margin-bottom: 0.8rem;
+        }
+
+        .request-log-container {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .request-log-empty {
+            text-align: center;
+            padding: 2rem;
+        }
+
+        .request-entry-summary {
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .request-entry-content {
+            margin-top: 0.5rem;
+            padding-top: 0.5rem;
+            border-top: 1px solid #444;
+        }
+
+        .request-entry-details {
+            font-size: 0.75rem;
+            color: #aaa;
+        }
+
+        .request-entry-body {
+            margin-top: 0.5rem;
+            padding: 0.5rem;
+            background-color: #0a0a0a;
+            border-radius: 2px;
+            font-size: 0.75rem;
+            color: #aaa;
+            overflow: auto;
+            max-height: 150px;
+        }
+
+        .request-entry-error-message {
+            color: #ff6666;
+        }
+
+        .request-entry-error-guidance {
+            color: #888;
+            font-size: 0.75rem;
+            margin-top: 0.3rem;
+        }
+
+        .request-entry-duration {
+            color: #888;
+        }
+
+        .request-status-2xx {
+            color: #00cc66;
+        }
+
+        .request-status-3xx {
+            color: #ffb84d;
+        }
+
+        .request-status-4xx,
+        .request-status-5xx {
+            color: #ff6666;
+        }
+
+        .request-status-network-error {
+            color: #ff6666;
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <h1>Local RAG HTTP Test Client</h1>
+        <p class="subtitle">Test and debug Local RAG HTTP endpoints</p>
+    </header>
+
+    <main class="container">
+        <!-- Connection Panel -->
+        <div class="panel connection">
+            <h2>Connection</h2>
+            <div class="form-group">
+                <label for="base-url">Base URL</label>
+                <input type="text" id="base-url" value="http://127.0.0.1:8765">
+            </div>
+            <div class="row-buttons">
+                <button id="health-button">Check Health</button>
+            </div>
+            <div id="connection-status" class="status status-idle" aria-live="polite">Not connected</div>
+            <div id="connection-detail"></div>
+        </div>
+
+        <div class="grid">
+            <!-- Ingest Panel -->
+            <div class="panel ingest">
+                <h2>Ingest</h2>
+                <div class="form-group">
+                    <label for="ingest-text">Content</label>
+                    <textarea id="ingest-text" placeholder="Paste text, URL, or file path"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="ingest-source">Source (optional)</label>
+                    <input type="text" id="ingest-source" placeholder="Auto-detected if left empty">
+                </div>
+                <p class="endpoint-label">
+                    Endpoint: <code class="endpoint-code">POST /ingest</code>
+                </p>
+                <button id="ingest-button">Ingest</button>
+                <div id="ingest-result" class="result result-empty" aria-live="polite">(no result yet)</div>
+            </div>
+
+            <!-- Retrieve Panel -->
+            <div class="panel retrieve">
+                <h2>Retrieve</h2>
+                <div class="form-group">
+                    <label for="retrieve-text">Query</label>
+                    <textarea id="retrieve-text" placeholder="Enter retrieval query"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="context-tokens-used">Context Tokens Used</label>
+                    <input type="number" id="context-tokens-used" value="3" placeholder="Non-negative token count" min="0" step="1">
+                </div>
+                <p class="endpoint-label">
+                    Endpoint: <code class="endpoint-code">POST /retrieve</code>
+                </p>
+                <button id="retrieve-button">Retrieve</button>
+                <div id="retrieve-result" class="result result-empty" aria-live="polite">(no result yet)</div>
+            </div>
+        </div>
+
+        <!-- Indexed Data Panel -->
+        <div class="panel panel-full indexed-data">
+            <h2>Indexed Data</h2>
+            <div class="row-buttons">
+                <button id="refresh-data-button">Refresh Stats & Sources</button>
+            </div>
+            <div class="grid-2-col">
+                <div>
+                    <h3 class="section-title">Stats</h3>
+                    <div id="stats-result" class="result result-empty" aria-live="polite">(no data)</div>
+                </div>
+                <div>
+                    <h3 class="section-title">Sources</h3>
+                    <div id="sources-result" class="result result-empty" aria-live="polite">(no data)</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Request Log Panel -->
+        <div class="panel panel-full request-log-panel">
+            <h2>Request Log</h2>
+            <div class="row-buttons">
+                <button id="clear-log-button">Clear Log</button>
+            </div>
+            <div id="request-log" class="request-log-container">
+                <div class="result-empty request-log-empty">
+                    No requests yet. Make a request above to see it logged.
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+    (function() {
+        'use strict';
+
+        // ========== Constants and Configuration ==========
+        const maxLogEntries = 20;
+
+        // ========== DOM Element Capture ==========
+        const elements = {
+            baseUrlInput: document.getElementById('base-url'),
+            healthButton: document.getElementById('health-button'),
+            connectionStatus: document.getElementById('connection-status'),
+            connectionDetail: document.getElementById('connection-detail'),
+            ingestText: document.getElementById('ingest-text'),
+            ingestSource: document.getElementById('ingest-source'),
+            ingestButton: document.getElementById('ingest-button'),
+            ingestResult: document.getElementById('ingest-result'),
+            retrieveText: document.getElementById('retrieve-text'),
+            contextTokensUsed: document.getElementById('context-tokens-used'),
+            retrieveButton: document.getElementById('retrieve-button'),
+            retrieveResult: document.getElementById('retrieve-result'),
+            refreshDataButton: document.getElementById('refresh-data-button'),
+            statsResult: document.getElementById('stats-result'),
+            sourcesResult: document.getElementById('sources-result'),
+            clearLogButton: document.getElementById('clear-log-button'),
+            requestLog: document.getElementById('request-log')
+        };
+
+        // ========== Utility Functions ==========
+
+        /**
+         * Format request body: pretty-prints objects, returns strings as-is
+         */
+        function formatBody(body) {
+            if (typeof body === 'object' && body !== null) {
+                return JSON.stringify(body, null, 2);
+            }
+            return String(body);
+        }
+
+        /**
+         * Normalize base URL: trim whitespace, remove trailing slashes, validate protocol
+         */
+        function normalizeBaseUrl(url) {
+            const trimmed = url.trim();
+            if (!trimmed.match(/^https?:\/\//)) {
+                throw new Error('Base URL must start with http:// or https://');
+            }
+            return trimmed.replace(/\/+$/, '');
+        }
+
+        /**
+         * Construct endpoint URL by appending path to base URL
+         */
+        function endpointUrl(baseUrl, path) {
+            return baseUrl + path;
+        }
+
+        /**
+         * Parse response body: attempt JSON parse, fall back to string
+         */
+        function parseResponseBody(text) {
+            try {
+                return JSON.parse(text);
+            } catch {
+                return text;
+            }
+        }
+
+        /**
+         * Append log entry: creates DOM elements, prepends to log, maintains max entries
+         */
+        function appendLog(method, url, status, duration, errorMessage, body) {
+            const entry = document.createElement('details');
+            entry.className = 'request-entry';
+
+            // Classify entry based on status: success (2xx), redirect (3xx), error (4xx/5xx/network)
+            if (status === null || status === undefined) {
+                entry.className += ' error';
+            } else if (status >= 200 && status < 300) {
+                entry.className += ' success';
+            } else if (status >= 300 && status < 400) {
+                entry.className += ' redirect';
+            } else if (status >= 400) {
+                entry.className += ' error';
+            }
+
+            // Create summary (visible part)
+            const summary = document.createElement('summary');
+            summary.className = 'request-entry-summary';
+
+            const timestamp = document.createElement('div');
+            timestamp.className = 'request-timestamp';
+            timestamp.textContent = new Date().toLocaleTimeString();
+
+            const methodSpan = document.createElement('span');
+            methodSpan.className = `request-method ${method.toLowerCase()}`;
+            methodSpan.textContent = method;
+
+            const urlSpan = document.createElement('span');
+            urlSpan.textContent = ' ' + url;
+
+            const statusSpan = document.createElement('span');
+            if (errorMessage) {
+                statusSpan.className = 'request-status-network-error';
+                statusSpan.textContent = ' ✗ Network error';
+            } else {
+                // Apply status-specific class: 2xx green, 3xx neutral, 4xx/5xx red
+                if (status >= 200 && status < 300) {
+                    statusSpan.className = 'request-status-2xx';
+                } else if (status >= 300 && status < 400) {
+                    statusSpan.className = 'request-status-3xx';
+                } else if (status >= 400 && status < 500) {
+                    statusSpan.className = 'request-status-4xx';
+                } else if (status >= 500) {
+                    statusSpan.className = 'request-status-5xx';
+                }
+                statusSpan.textContent = ` ${status} `;
+            }
+
+            const durationSpan = document.createElement('span');
+            durationSpan.className = 'request-entry-duration';
+            durationSpan.textContent = ` (${duration}ms)`;
+
+            summary.appendChild(timestamp);
+            summary.appendChild(methodSpan);
+            summary.appendChild(urlSpan);
+            summary.appendChild(statusSpan);
+            summary.appendChild(durationSpan);
+
+            // Create details content
+            const content = document.createElement('div');
+            content.className = 'request-entry-content';
+
+            if (errorMessage) {
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'request-entry-error-message';
+                errorDiv.textContent = 'Network error: ' + errorMessage;
+                content.appendChild(errorDiv);
+
+                const guidanceDiv = document.createElement('div');
+                guidanceDiv.className = 'request-entry-error-guidance';
+                guidanceDiv.textContent = 'Check: Base URL is correct, server is running, CORS is configured if cross-origin.';
+                content.appendChild(guidanceDiv);
+            } else {
+                const detailsDiv = document.createElement('div');
+                detailsDiv.className = 'request-entry-details';
+                detailsDiv.textContent = `URL: ${url} | Status: ${status} | Duration: ${duration}ms`;
+                content.appendChild(detailsDiv);
+            }
+
+            // Render response body if present
+            if (body !== null && body !== undefined) {
+                const bodyPre = document.createElement('pre');
+                bodyPre.className = 'request-entry-body';
+                bodyPre.textContent = formatBody(body);
+                content.appendChild(bodyPre);
+            }
+
+            entry.appendChild(summary);
+            entry.appendChild(content);
+
+            // Open error entries by default
+            if (status === null || status === undefined || (status >= 400)) {
+                entry.open = true;
+            }
+
+            // Prepend to log container
+            const logContainer = elements.requestLog;
+            if (logContainer.firstChild) {
+                logContainer.insertBefore(entry, logContainer.firstChild);
+            } else {
+                logContainer.appendChild(entry);
+            }
+
+            // Remove empty message if present
+            const emptyMsg = logContainer.querySelector('.request-log-empty');
+            if (emptyMsg) {
+                emptyMsg.remove();
+            }
+
+            // Maintain max entries: keep only the first maxLogEntries children
+            const entries = logContainer.querySelectorAll('.request-entry');
+            for (let i = entries.length - 1; i >= maxLogEntries; i--) {
+                entries[i].remove();
+            }
+        }
+
+        /**
+         * Clear log: reset to empty state with muted message
+         */
+        function clearLog() {
+            const logContainer = elements.requestLog;
+            // Remove all children via removeChild to avoid innerHTML
+            while (logContainer.firstChild) {
+                logContainer.removeChild(logContainer.firstChild);
+            }
+
+            const emptyMsg = document.createElement('div');
+            emptyMsg.className = 'result-empty request-log-empty';
+            emptyMsg.textContent = 'Log cleared. Make a request to see it logged.';
+
+            logContainer.appendChild(emptyMsg);
+        }
+
+        /**
+         * Display result in result container via textContent (never innerHTML)
+         */
+        function showResult(containerId, data) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+
+            if (typeof data === 'string') {
+                container.textContent = data;
+            } else if (typeof data === 'object' && data !== null) {
+                container.textContent = JSON.stringify(data, null, 2);
+            } else {
+                container.textContent = String(data);
+            }
+        }
+
+        /**
+         * Make HTTP request: method, path, optional body, track button state
+         */
+        async function request({ method, path, body, button }) {
+            const startTime = performance.now();
+            let duration = 0;
+            let resolvedUrl = null;
+
+            try {
+                // Hoist URL construction: normalize base URL with safe error handling
+                let baseUrl;
+                try {
+                    baseUrl = normalizeBaseUrl(elements.baseUrlInput.value);
+                } catch (normError) {
+                    // If normalization fails, safely represent the raw base for logging
+                    resolvedUrl = elements.baseUrlInput.value + path;
+                    throw normError;
+                }
+                resolvedUrl = endpointUrl(baseUrl, path);
+
+                // Disable button
+                if (button) {
+                    button.disabled = true;
+                }
+
+                // Build fetch options
+                const fetchOptions = {
+                    method: method,
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                };
+
+                // Add Content-Type and body only if body exists
+                if (body !== null && body !== undefined) {
+                    fetchOptions.headers['Content-Type'] = 'application/json';
+                    fetchOptions.body = typeof body === 'string' ? body : JSON.stringify(body);
+                }
+
+                // Make request
+                const response = await fetch(resolvedUrl, fetchOptions);
+                duration = Math.round(performance.now() - startTime);
+
+                // Parse response
+                const responseText = await response.text();
+                const parsedBody = parseResponseBody(responseText);
+
+                // Log entry with response body
+                appendLog(method, resolvedUrl, response.status, duration, null, parsedBody);
+
+                // Handle non-OK responses
+                if (!response.ok) {
+                    const errorMsg = `HTTP ${response.status}: ${
+                        typeof parsedBody === 'object' ? JSON.stringify(parsedBody) : parsedBody
+                    }`;
+                    throw new Error(errorMsg);
+                }
+
+                return parsedBody;
+
+            } catch (error) {
+                duration = Math.round(performance.now() - startTime);
+
+                if (error instanceof TypeError) {
+                    // Network error - log with resolved URL (or raw base+path if normalization failed)
+                    appendLog(method, resolvedUrl || elements.baseUrlInput.value + path, null, duration, error.message, null);
+                    throw new Error(`Network error: ${error.message}`);
+                } else {
+                    // HTTP error or other
+                    throw error;
+                }
+            } finally {
+                // Restore button state
+                if (button) {
+                    button.disabled = false;
+                }
+            }
+        }
+
+        // ========== Connection Status ==========
+
+        /**
+         * Set connection status indicator.
+         * Uses CSS classes (status-idle, status-ok, status-error) — never .style mutations.
+         * @param {'idle'|'ok'|'error'} state
+         * @param {string} text  - accessible status text shown in the element
+         * @param {string} [detail] - optional detail text for connection-detail area
+         */
+        function setConnectionStatus(state, text, detail) {
+            const el = elements.connectionStatus;
+            el.className = 'status status-' + state;
+            el.textContent = text;
+            if (detail !== undefined) {
+                elements.connectionDetail.textContent = detail;
+            }
+        }
+
+        // ========== Health Check ==========
+
+        /**
+         * Check server health via GET /health.
+         * status "ok"    => Connected  (status-ok)
+         * any other status => status-error with server status + latency detail
+         * Network/HTTP error => status-error with response body or error text
+         */
+        async function checkHealth() {
+            const startTime = performance.now();
+            setConnectionStatus('idle', 'Checking…');
+            elements.connectionDetail.textContent = '';
+            try {
+                const data = await request({
+                    method: 'GET',
+                    path: '/health',
+                    button: elements.healthButton
+                });
+                const latency = Math.round(performance.now() - startTime);
+                if (data && data.status === 'ok') {
+                    setConnectionStatus('ok', 'Connected', 'Status: ok  |  Latency: ' + latency + 'ms');
+                } else {
+                    const serverStatus = (data && data.status) ? data.status : 'unknown';
+                    const reason = (data && data.reason) ? '  |  ' + data.reason : '';
+                    setConnectionStatus('error', 'Service error',
+                        'Status: ' + serverStatus + reason + '  |  Latency: ' + latency + 'ms');
+                }
+            } catch (err) {
+                setConnectionStatus('error', 'Error', err.message || String(err));
+            }
+        }
+
+        // ========== Ingest ==========
+
+        /**
+         * Ingest content via POST /ingest.
+         * Client-side validation: text is required (shows error via showResult, no request).
+         * Source is optional and trimmed.
+         */
+        async function checkIngest() {
+            const text = elements.ingestText.value;
+            const source = elements.ingestSource.value.trim();
+
+            if (!text || !text.trim()) {
+                showResult('ingest-result', { error: 'Text is required.' });
+                return;
+            }
+
+            const body = { text: text };
+            if (source) {
+                body.source = source;
+            }
+
+            try {
+                const data = await request({
+                    method: 'POST',
+                    path: '/ingest',
+                    body: body,
+                    button: elements.ingestButton
+                });
+                showResult('ingest-result', data);
+            } catch (err) {
+                showResult('ingest-result', { error: err.message || String(err) });
+            }
+        }
+
+        // ========== Retrieve ==========
+
+        /**
+         * Render retrieve chunks into the result container using DOM APIs.
+         * Displays "No chunks returned" message if chunks is empty.
+         * Each chunk is displayed as a card with a <pre> for text content.
+         * Source markers ([来源: name]) are preserved as-is in textContent.
+         * @param {string} containerId
+         * @param {string[]} chunks
+         */
+        function renderChunks(containerId, chunks) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+
+            // Clear existing content via removeChild
+            while (container.firstChild) {
+                container.removeChild(container.firstChild);
+            }
+
+            if (!chunks || chunks.length === 0) {
+                const msg = document.createElement('div');
+                msg.className = 'result-empty';
+                msg.textContent = 'No chunks returned.';
+                container.appendChild(msg);
+                return;
+            }
+
+            chunks.forEach(function(chunk, idx) {
+                const card = document.createElement('div');
+                card.className = 'chunk-card';
+
+                // Title: "Chunk N"
+                const title = document.createElement('div');
+                title.className = 'chunk-card-title';
+                title.textContent = 'Chunk ' + (idx + 1);
+                card.appendChild(title);
+
+                // Body: pre element with chunk text preserved as textContent
+                const pre = document.createElement('pre');
+                pre.textContent = chunk;
+                card.appendChild(pre);
+
+                container.appendChild(card);
+            });
+        }
+
+        /**
+         * Retrieve relevant chunks via POST /retrieve.
+         * Client-side validation: query required; context_tokens_used optional non-negative integer.
+         * Invalid input renders safe result text (textContent) without making a request.
+         * On success calls renderChunks to build DOM cards.
+         */
+        async function checkRetrieve() {
+            const queryText = elements.retrieveText.value;
+            const ctxRaw = elements.contextTokensUsed.value.trim();
+
+            if (!queryText || !queryText.trim()) {
+                showResult('retrieve-result', 'Query is required.');
+                return;
+            }
+
+            let contextTokens = null;
+            if (ctxRaw !== '') {
+                const parsed = Number(ctxRaw);
+                if (!Number.isInteger(parsed) || parsed < 0) {
+                    showResult('retrieve-result', 'Context Tokens Used must be a non-negative integer.');
+                    return;
+                }
+                contextTokens = parsed;
+            }
+
+            const body = { text: queryText };
+            if (contextTokens !== null) {
+                body.context_tokens_used = contextTokens;
+            }
+
+            try {
+                const data = await request({
+                    method: 'POST',
+                    path: '/retrieve',
+                    body: body,
+                    button: elements.retrieveButton
+                });
+                if (data && Array.isArray(data.chunks)) {
+                    renderChunks('retrieve-result', data.chunks);
+                } else {
+                    showResult('retrieve-result', data);
+                }
+            } catch (err) {
+                showResult('retrieve-result', { error: err.message || String(err) });
+            }
+        }
+
+        // ========== Refresh Data ==========
+
+        /**
+         * Fetch /stats and /sources concurrently via Promise.allSettled.
+         * Each result is rendered independently — one failure does not erase the other.
+         * Refresh button is temporarily disabled during the fetch.
+         */
+        async function refreshData() {
+            elements.refreshDataButton.disabled = true;
+            try {
+                const [statsResult, sourcesResult] = await Promise.allSettled([
+                    request({ method: 'GET', path: '/stats' }),
+                    request({ method: 'GET', path: '/sources' })
+                ]);
+
+                if (statsResult.status === 'fulfilled') {
+                    showResult('stats-result', statsResult.value);
+                } else {
+                    showResult('stats-result', { error: statsResult.reason.message || String(statsResult.reason) });
+                }
+
+                if (sourcesResult.status === 'fulfilled') {
+                    showResult('sources-result', sourcesResult.value);
+                } else {
+                    showResult('sources-result', { error: sourcesResult.reason.message || String(sourcesResult.reason) });
+                }
+            } finally {
+                elements.refreshDataButton.disabled = false;
+            }
+        }
+
+        // ========== Event Handlers ==========
+
+        elements.clearLogButton.addEventListener('click', () => {
+            clearLog();
+        });
+
+        elements.healthButton.addEventListener('click', () => {
+            checkHealth();
+        });
+
+        elements.ingestButton.addEventListener('click', () => {
+            checkIngest();
+        });
+
+        elements.retrieveButton.addEventListener('click', () => {
+            checkRetrieve();
+        });
+
+        elements.refreshDataButton.addEventListener('click', () => {
+            refreshData();
+        });
+
+        // ========== Setup complete ==========
+        console.log('Web client diagnostics loaded.');
+
+        // ========== TDD export hook (removed from production; test script patches IIFE) ==========
+    })();
+    </script>
+</body>
+</html>
