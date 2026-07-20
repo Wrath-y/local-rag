@@ -14,9 +14,9 @@ import (
 
 // Config holds sidecar manager configuration.
 type Config struct {
-	Provider        string        // "local" means we need sidecar
+	Provider        string // "local" means we need sidecar
 	Port            int
-	PythonPath      string        // path to sidecar/main.py
+	PythonPath      string // path to sidecar/main.py
 	HealthInterval  time.Duration
 	HealthRetries   int
 	StartupTimeout  time.Duration
