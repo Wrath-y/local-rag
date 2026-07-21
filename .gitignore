@@ -1,4 +1,9 @@
-.claude
+.claude/*
+!.claude/settings.json
+!.claude/hook.sh
+!.claude/commands/
+.claude/commands/*
+!.claude/commands/rag*.md
 .idea
 MEMORY.md
 
