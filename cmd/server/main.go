@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -20,6 +21,22 @@ import (
 	"github.com/Wrath-y/local-rag/internal/sidecar"
 	"github.com/Wrath-y/local-rag/internal/store"
 )
+
+func corsMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Header("Access-Control-Allow-Origin", "*")
+		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		c.Header("Access-Control-Allow-Headers", "Content-Type, Accept")
+
+		if c.Request.Method == http.MethodOptions {
+			c.Status(http.StatusNoContent)
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}
 
 func main() {
 	cfgPath := "config.yaml"
@@ -99,7 +116,7 @@ func main() {
 	// Gin router.
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
-	r.Use(gin.Recovery())
+	r.Use(gin.Recovery(), corsMiddleware())
 
 	// Core routes.
 	r.POST("/ingest", h.Ingest)
