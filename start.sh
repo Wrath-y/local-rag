@@ -34,11 +34,13 @@ if [ -f .rag-server.pid ]; then
     rm -f .rag-server.pid
 fi
 
-# Ensure log directory exists
-mkdir -p .run
+# Ensure daily server logs are captured under the repository root.
+LOG_DIR="$SCRIPT_DIR/logs"
+LOG_FILE="$LOG_DIR/rag-server-$(date +%Y%m%d).log"
+mkdir -p "$LOG_DIR"
 
 # Start
-./rag-server >>.run/rag-server.log 2>&1 &
+./rag-server >>"$LOG_FILE" 2>&1 &
 PID=$!
 echo "$PID" > .rag-server.pid
 

@@ -164,7 +164,7 @@ UserPromptSubmit Hook（hook_script.py）
 
 ```bash
 /rag-verbose on    # 开启详细日志
-tail -f /tmp/local-rag.log
+tail -f logs/rag-server-$(date +%Y%m%d).log
 ```
 每条候选显示向量相似度（`vec`）、关键词覆盖率（`kw`）、混合得分（`final`）、来源及文本预览。
 
