@@ -34,8 +34,11 @@ if [ -f .rag-server.pid ]; then
     rm -f .rag-server.pid
 fi
 
+# Ensure log directory exists
+mkdir -p .run
+
 # Start
-./rag-server &
+./rag-server >>.run/rag-server.log 2>&1 &
 PID=$!
 echo "$PID" > .rag-server.pid
 
