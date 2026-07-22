@@ -266,6 +266,31 @@ func TestRerankToggle(t *testing.T) {
 	}
 }
 
+func TestResetRequiresConfirmationAndUsesSharedService(t *testing.T) {
+	st := newTestStore(t)
+	if _, err := st.InsertChunk("content", "source", "reset-test", "", "", []float32{0, 0, 0, 0}); err != nil {
+		t.Fatal(err)
+	}
+	h := New(testDeps(t, st))
+	withoutConfirmation := httptest.NewRecorder()
+	contextWithoutConfirmation, _ := gin.CreateTestContext(withoutConfirmation)
+	contextWithoutConfirmation.Request = httptest.NewRequest(http.MethodDelete, "/reset", nil)
+	h.Reset(contextWithoutConfirmation)
+	if withoutConfirmation.Code != http.StatusBadRequest {
+		t.Fatalf("unconfirmed reset = %d, want 400", withoutConfirmation.Code)
+	}
+	withConfirmation := httptest.NewRecorder()
+	contextWithConfirmation, _ := gin.CreateTestContext(withConfirmation)
+	contextWithConfirmation.Request = httptest.NewRequest(http.MethodDelete, "/reset?confirm=true", nil)
+	h.Reset(contextWithConfirmation)
+	if withConfirmation.Code != http.StatusOK {
+		t.Fatalf("confirmed reset = %d: %s", withConfirmation.Code, withConfirmation.Body.String())
+	}
+	if count, err := st.ChunkCount(); err != nil || count != 0 {
+		t.Fatalf("chunk count after reset = %d, %v", count, err)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // TestSetChunkStrategy_Invalid
 // ---------------------------------------------------------------------------

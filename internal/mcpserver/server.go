@@ -16,6 +16,7 @@ import (
 	"github.com/Wrath-y/local-rag/internal/chunk"
 	"github.com/Wrath-y/local-rag/internal/citation"
 	"github.com/Wrath-y/local-rag/internal/config"
+	"github.com/Wrath-y/local-rag/internal/management"
 	"github.com/Wrath-y/local-rag/internal/observe"
 	"github.com/Wrath-y/local-rag/internal/provider"
 	"github.com/Wrath-y/local-rag/internal/store"
@@ -23,17 +24,24 @@ import (
 
 // Deps mirrors handler.Deps — holds all internal services.
 type Deps struct {
-	Config   *config.Config
-	Store    *store.Store
-	Embedder provider.EmbedProvider
-	Reranker provider.RerankProvider
-	LLM      provider.LLMProvider
-	Chunker  chunk.Chunker
+	Config     *config.Config
+	Store      *store.Store
+	Embedder   provider.EmbedProvider
+	Reranker   provider.RerankProvider
+	LLM        provider.LLMProvider
+	Chunker    chunk.Chunker
+	Management *management.Service
 }
 
 // Run creates and starts the MCP server over stdio transport.
 // Blocks until the client disconnects.
 func Run(ctx context.Context, deps Deps) error {
+	return newMCPServer(deps).Run(ctx, &mcp.StdioTransport{})
+}
+
+// newMCPServer constructs the complete registry separately from the stdio
+// transport so the discoverable MCP contract can be tested in memory.
+func newMCPServer(deps Deps) *mcp.Server {
 	s := &server{deps: deps, citations: citation.NewManager(time.Hour)}
 
 	mcpServer := mcp.NewServer(
@@ -69,7 +77,21 @@ func Run(ctx context.Context, deps Deps) error {
 		Description: "Get the status of the RAG knowledge base including total chunk count.",
 	}, s.handleStatus)
 
-	return mcpServer.Run(ctx, &mcp.StdioTransport{})
+	mcp.AddTool(mcpServer, &mcp.Tool{Name: "rag_update_source", Description: "Replace all chunks for a source with supplied content. Requires confirm: true and returns an asynchronous task."}, s.handleUpdateSource)
+	mcp.AddTool(mcpServer, &mcp.Tool{Name: "rag_reset", Description: "Remove all knowledge-base content. Requires confirm: true and returns an asynchronous task."}, s.handleReset)
+	mcp.AddTool(mcpServer, &mcp.Tool{Name: "rag_export", Description: "Create a local zip export and return local artifact metadata. Archive bytes are never streamed over MCP."}, s.handleExport)
+	mcp.AddTool(mcpServer, &mcp.Tool{Name: "rag_import", Description: "Replace the knowledge base from a local export archive. Requires confirm: true and returns an asynchronous task."}, s.handleImport)
+	mcp.AddTool(mcpServer, &mcp.Tool{Name: "rag_backup_run", Description: "Create a local backup asynchronously and return a task identifier."}, s.handleBackupRun)
+	mcp.AddTool(mcpServer, &mcp.Tool{Name: "rag_backup_list", Description: "List local backup artifacts, newest first."}, s.handleBackupList)
+	mcp.AddTool(mcpServer, &mcp.Tool{Name: "rag_backup_restore", Description: "Restore a local backup archive. Requires confirm: true and returns an asynchronous task."}, s.handleBackupRestore)
+	mcp.AddTool(mcpServer, &mcp.Tool{Name: "rag_storage_integrity_check", Description: "Run SQLite integrity_check and return its result."}, s.handleIntegrityCheck)
+	mcp.AddTool(mcpServer, &mcp.Tool{Name: "rag_index_rebuild", Description: "Rebuild vector embeddings asynchronously and return a task identifier."}, s.handleIndexRebuild)
+	mcp.AddTool(mcpServer, &mcp.Tool{Name: "rag_index_status", Description: "Return index-rebuild availability and process-local task semantics."}, s.handleIndexStatus)
+	mcp.AddTool(mcpServer, &mcp.Tool{Name: "rag_retrieval_config_get", Description: "Get effective supported runtime retrieval configuration."}, s.handleRetrievalConfigGet)
+	mcp.AddTool(mcpServer, &mcp.Tool{Name: "rag_retrieval_config_set", Description: "Atomically update supported runtime retrieval configuration fields."}, s.handleRetrievalConfigSet)
+	mcp.AddTool(mcpServer, &mcp.Tool{Name: "rag_task_status", Description: "Inspect a process-local asynchronous management task by its opaque identifier."}, s.handleTaskStatus)
+
+	return mcpServer
 }
 
 type server struct {
@@ -80,11 +102,11 @@ type server struct {
 // --- Input/Output types ---
 
 type IngestInput struct {
-	Text     string `json:"text" jsonschema:"description=Text content to ingest into the knowledge base"`
-	Source   string `json:"source" jsonschema:"description=Source identifier (e.g. filename or URL). Defaults to 'manual'"`
-	Title    string `json:"title,omitempty" jsonschema:"description=Optional document title for citations"`
-	URI      string `json:"uri,omitempty" jsonschema:"description=Optional original document URI or filesystem path for citations"`
-	Location string `json:"location,omitempty" jsonschema:"description=Optional document location (for example page or section) for citations"`
+	Text     string `json:"text" jsonschema:"Text content to ingest into the knowledge base"`
+	Source   string `json:"source" jsonschema:"Source identifier (e.g. filename or URL). Defaults to 'manual'"`
+	Title    string `json:"title,omitempty" jsonschema:"Optional document title for citations"`
+	URI      string `json:"uri,omitempty" jsonschema:"Optional original document URI or filesystem path for citations"`
+	Location string `json:"location,omitempty" jsonschema:"Optional document location (for example page or section)"`
 }
 
 type IngestOutput struct {
@@ -93,8 +115,8 @@ type IngestOutput struct {
 }
 
 type RetrieveInput struct {
-	Query string `json:"query" jsonschema:"description=Search query to find relevant documents"`
-	TopK  int    `json:"top_k,omitempty" jsonschema:"description=Number of results to return (default: from config)"`
+	Query string `json:"query" jsonschema:"Search query to find relevant documents"`
+	TopK  int    `json:"top_k,omitempty" jsonschema:"Number of results to return (default: from config)"`
 }
 
 type RetrieveOutput struct {
@@ -110,7 +132,7 @@ type ListSourcesOutput struct {
 }
 
 type DeleteSourceInput struct {
-	Source string `json:"source" jsonschema:"description=Source identifier to delete all chunks from"`
+	Source string `json:"source" jsonschema:"Source identifier to delete all chunks from"`
 }
 
 type DeleteSourceOutput struct {
@@ -122,6 +144,52 @@ type StatusInput struct{}
 type StatusOutput struct {
 	TotalChunks int `json:"total_chunks"`
 }
+
+type UpdateSourceInput struct {
+	Source  string `json:"source" jsonschema:"Source identifier to replace"`
+	Content string `json:"content" jsonschema:"Replacement text content"`
+	Confirm bool   `json:"confirm" jsonschema:"Must be literal true before replacing a source"`
+}
+type ResetInput struct {
+	Confirm bool `json:"confirm" jsonschema:"Must be literal true before clearing all content"`
+}
+type ArchiveInput struct {
+	Path string `json:"path,omitempty" jsonschema:"Optional absolute local .zip destination path"`
+}
+type ImportInput struct {
+	Path    string `json:"path" jsonschema:"Absolute local archive path"`
+	Confirm bool   `json:"confirm" jsonschema:"Must be literal true before replacing persisted content"`
+}
+type BackupRestoreInput = ImportInput
+type BackupRunInput struct{}
+type BackupListInput struct{}
+type IntegrityInput struct{}
+type IndexRebuildInput struct{}
+type IndexStatusInput struct{}
+type RetrievalConfigGetInput struct{}
+type RetrievalConfigSetInput struct {
+	RerankEnabled        *bool   `json:"rerank_enabled,omitempty" jsonschema:"Enable reranking"`
+	VerboseEnabled       *bool   `json:"verbose_enabled,omitempty" jsonschema:"Enable verbose retrieval logging"`
+	DynamicTopKEnabled   *bool   `json:"dynamic_top_k_enabled,omitempty" jsonschema:"Enable dynamic top-k"`
+	QueryRewriteEnabled  *bool   `json:"query_rewrite_enabled,omitempty" jsonschema:"Enable query rewriting"`
+	QueryRewriteStrategy *string `json:"query_rewrite_strategy,omitempty" jsonschema:"Query rewrite strategy: expansion or none"`
+	ChunkStrategy        *string `json:"chunk_strategy,omitempty" jsonschema:"Chunk strategy: fixed, structure, semantic, agentic, or hierarchical"`
+}
+type TaskStatusInput struct {
+	TaskID string `json:"task_id" jsonschema:"Opaque task identifier returned by a management tool"`
+}
+type SubmissionOutput = management.Submission
+type ExportOutput = management.Artifact
+type BackupListOutput struct {
+	Backups []management.BackupInfo `json:"backups"`
+}
+type IntegrityOutput struct {
+	Status string `json:"status"`
+	Detail string `json:"detail"`
+}
+type IndexStatusOutput map[string]any
+type RetrievalConfigOutput = management.RetrievalConfig
+type TaskStatusOutput = management.Task
 
 // --- Handlers ---
 
@@ -309,6 +377,158 @@ func (s *server) handleStatus(ctx context.Context, req *mcp.CallToolRequest, inp
 
 	text := fmt.Sprintf("RAG Status: OK | Total chunks: %d", count)
 	return textResult(text), StatusOutput{TotalChunks: count}, nil
+}
+
+func (s *server) management() (*management.Service, error) {
+	if s.deps.Management == nil {
+		return nil, fmt.Errorf("management service is unavailable")
+	}
+	return s.deps.Management, nil
+}
+
+func (s *server) handleUpdateSource(ctx context.Context, req *mcp.CallToolRequest, input UpdateSourceInput) (*mcp.CallToolResult, SubmissionOutput, error) {
+	service, err := s.management()
+	if err != nil {
+		return errResult(err.Error()), SubmissionOutput{}, nil
+	}
+	result, err := service.UpdateSource(ctx, management.UpdateSourceRequest{Source: input.Source, Content: input.Content, Confirm: input.Confirm})
+	if err != nil {
+		return errResult(err.Error()), SubmissionOutput{}, nil
+	}
+	return textResult("Source update queued. Poll rag_task_status with the returned task_id."), result, nil
+}
+func (s *server) handleReset(ctx context.Context, req *mcp.CallToolRequest, input ResetInput) (*mcp.CallToolResult, SubmissionOutput, error) {
+	service, err := s.management()
+	if err != nil {
+		return errResult(err.Error()), SubmissionOutput{}, nil
+	}
+	result, err := service.Reset(management.ResetRequest{Confirm: input.Confirm})
+	if err != nil {
+		return errResult(err.Error()), SubmissionOutput{}, nil
+	}
+	return textResult("Reset queued. Poll rag_task_status with the returned task_id."), result, nil
+}
+func (s *server) handleExport(ctx context.Context, req *mcp.CallToolRequest, input ArchiveInput) (*mcp.CallToolResult, ExportOutput, error) {
+	service, err := s.management()
+	if err != nil {
+		return errResult(err.Error()), ExportOutput{}, nil
+	}
+	result, err := service.Export(management.ArchiveRequest{Path: input.Path})
+	if err != nil {
+		return errResult(err.Error()), ExportOutput{}, nil
+	}
+	return textResult("Export created at " + result.Path), result, nil
+}
+func (s *server) handleImport(ctx context.Context, req *mcp.CallToolRequest, input ImportInput) (*mcp.CallToolResult, SubmissionOutput, error) {
+	service, err := s.management()
+	if err != nil {
+		return errResult(err.Error()), SubmissionOutput{}, nil
+	}
+	result, err := service.Import(management.ImportRequest{Path: input.Path, Confirm: input.Confirm})
+	if err != nil {
+		return errResult(err.Error()), SubmissionOutput{}, nil
+	}
+	return textResult("Import queued. Poll rag_task_status with the returned task_id."), result, nil
+}
+func (s *server) handleBackupRun(ctx context.Context, req *mcp.CallToolRequest, input BackupRunInput) (*mcp.CallToolResult, SubmissionOutput, error) {
+	service, err := s.management()
+	if err != nil {
+		return errResult(err.Error()), SubmissionOutput{}, nil
+	}
+	result, err := service.BackupRun()
+	if err != nil {
+		return errResult(err.Error()), SubmissionOutput{}, nil
+	}
+	return textResult("Backup queued. Poll rag_task_status with the returned task_id."), result, nil
+}
+func (s *server) handleBackupList(ctx context.Context, req *mcp.CallToolRequest, input BackupListInput) (*mcp.CallToolResult, BackupListOutput, error) {
+	service, err := s.management()
+	if err != nil {
+		return errResult(err.Error()), BackupListOutput{}, nil
+	}
+	backups, err := service.BackupList()
+	if err != nil {
+		return errResult(err.Error()), BackupListOutput{}, nil
+	}
+	return textResult(fmt.Sprintf("Found %d backup(s).", len(backups))), BackupListOutput{Backups: backups}, nil
+}
+func (s *server) handleBackupRestore(ctx context.Context, req *mcp.CallToolRequest, input BackupRestoreInput) (*mcp.CallToolResult, SubmissionOutput, error) {
+	service, err := s.management()
+	if err != nil {
+		return errResult(err.Error()), SubmissionOutput{}, nil
+	}
+	result, err := service.BackupRestore(management.ImportRequest{Path: input.Path, Confirm: input.Confirm})
+	if err != nil {
+		return errResult(err.Error()), SubmissionOutput{}, nil
+	}
+	return textResult("Backup restore queued. Poll rag_task_status with the returned task_id."), result, nil
+}
+func (s *server) handleIntegrityCheck(ctx context.Context, req *mcp.CallToolRequest, input IntegrityInput) (*mcp.CallToolResult, IntegrityOutput, error) {
+	service, err := s.management()
+	if err != nil {
+		return errResult(err.Error()), IntegrityOutput{}, nil
+	}
+	detail, err := service.IntegrityCheck()
+	if err != nil {
+		return errResult(err.Error()), IntegrityOutput{}, nil
+	}
+	status := "ok"
+	if detail != "ok" {
+		status = "error"
+	}
+	return textResult("Integrity check: " + detail), IntegrityOutput{Status: status, Detail: detail}, nil
+}
+func (s *server) handleIndexRebuild(ctx context.Context, req *mcp.CallToolRequest, input IndexRebuildInput) (*mcp.CallToolResult, SubmissionOutput, error) {
+	service, err := s.management()
+	if err != nil {
+		return errResult(err.Error()), SubmissionOutput{}, nil
+	}
+	result, err := service.IndexRebuild()
+	if err != nil {
+		return errResult(err.Error()), SubmissionOutput{}, nil
+	}
+	return textResult("Index rebuild queued. Poll rag_task_status with the returned task_id."), result, nil
+}
+func (s *server) handleIndexStatus(ctx context.Context, req *mcp.CallToolRequest, input IndexStatusInput) (*mcp.CallToolResult, IndexStatusOutput, error) {
+	service, err := s.management()
+	if err != nil {
+		return errResult(err.Error()), IndexStatusOutput{}, nil
+	}
+	status := IndexStatusOutput(service.IndexStatus())
+	return textResult(fmt.Sprintf("Index status: %v", status["state"])), status, nil
+}
+func (s *server) handleRetrievalConfigGet(ctx context.Context, req *mcp.CallToolRequest, input RetrievalConfigGetInput) (*mcp.CallToolResult, RetrievalConfigOutput, error) {
+	service, err := s.management()
+	if err != nil {
+		return errResult(err.Error()), RetrievalConfigOutput{}, nil
+	}
+	result := service.RetrievalConfig()
+	return textResult("Returned effective runtime retrieval configuration."), result, nil
+}
+func (s *server) handleRetrievalConfigSet(ctx context.Context, req *mcp.CallToolRequest, input RetrievalConfigSetInput) (*mcp.CallToolResult, RetrievalConfigOutput, error) {
+	service, err := s.management()
+	if err != nil {
+		return errResult(err.Error()), RetrievalConfigOutput{}, nil
+	}
+	result, err := service.SetRetrievalConfig(management.RetrievalPatch{RerankEnabled: input.RerankEnabled, VerboseEnabled: input.VerboseEnabled, DynamicTopKEnabled: input.DynamicTopKEnabled, QueryRewriteEnabled: input.QueryRewriteEnabled, QueryRewriteStrategy: input.QueryRewriteStrategy, ChunkStrategy: input.ChunkStrategy})
+	if err != nil {
+		return errResult(err.Error()), RetrievalConfigOutput{}, nil
+	}
+	return textResult("Updated effective runtime retrieval configuration."), result, nil
+}
+func (s *server) handleTaskStatus(ctx context.Context, req *mcp.CallToolRequest, input TaskStatusInput) (*mcp.CallToolResult, TaskStatusOutput, error) {
+	if input.TaskID == "" {
+		return errResult("task_id is required"), TaskStatusOutput{}, nil
+	}
+	service, err := s.management()
+	if err != nil {
+		return errResult(err.Error()), TaskStatusOutput{}, nil
+	}
+	task, found := service.Tasks().Get(input.TaskID)
+	if !found {
+		return errResult("task is unavailable"), TaskStatusOutput{}, nil
+	}
+	return textResult(fmt.Sprintf("Task %s is %s.", task.ID, task.State)), task, nil
 }
 
 // --- Helpers ---

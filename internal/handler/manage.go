@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -9,17 +10,13 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/Wrath-y/local-rag/internal/config"
+	"github.com/Wrath-y/local-rag/internal/management"
 	"github.com/Wrath-y/local-rag/internal/store"
 )
 
 // ListSources returns all indexed sources with chunk counts.
 func (h *Handler) ListSources(c *gin.Context) {
-	var sources []store.SourceInfo
-	err := h.deps.Stores.WithWriteStore(func(st *store.Store) error {
-		var listErr error
-		sources, listErr = st.ListSources()
-		return listErr
-	})
+	sources, err := h.management.ListSources()
 	if err != nil {
 		if err == ErrRebuildInProgress {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
@@ -38,12 +35,7 @@ func (h *Handler) DeleteSource(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "source query param is required"})
 		return
 	}
-	var n int
-	err := h.deps.Stores.WithStore(func(st *store.Store) error {
-		var deleteErr error
-		n, deleteErr = st.DeleteSource(source)
-		return deleteErr
-	})
+	n, err := h.management.DeleteSource(source)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -53,12 +45,28 @@ func (h *Handler) DeleteSource(c *gin.Context) {
 
 // Reset removes all chunks from the store.
 func (h *Handler) Reset(c *gin.Context) {
-	if err := h.deps.Stores.WithWriteStore(func(st *store.Store) error { return st.Reset() }); err != nil {
-		if err == ErrRebuildInProgress {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
-			return
-		}
+	if h.deps.Stores.Rebuilding() {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": ErrRebuildInProgress.Error()})
+		return
+	}
+	if c.Query("confirm") != "true" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "confirm must be true"})
+		return
+	}
+	submission, err := h.management.Reset(management.ResetRequest{Confirm: true})
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	task, found, err := h.management.Tasks().Wait(context.Background(), submission.TaskID)
+	if err != nil || !found || task.State != management.TaskSucceeded {
+		errorText := "reset failed"
+		if err != nil {
+			errorText = err.Error()
+		} else if found && task.Error != "" {
+			errorText = task.Error
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": errorText})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
@@ -89,14 +97,24 @@ func (h *Handler) Stats(c *gin.Context) {
 
 // Export downloads the SQLite database file as a versioned zip archive.
 func (h *Handler) Export(c *gin.Context) {
-	snapshotPath, cleanup, err := h.createDatabaseSnapshot()
+	temporary, err := os.CreateTemp(filepath.Dir(h.deps.Config.Storage.DBPath), ".rag-http-export-*.zip")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "export failed: " + err.Error()})
 		return
 	}
-	defer cleanup()
-
-	zipData, err := createDBZip(snapshotPath, h.backupPackageMetadata())
+	archivePath := temporary.Name()
+	if err := temporary.Close(); err != nil {
+		_ = os.Remove(archivePath)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "export failed: " + err.Error()})
+		return
+	}
+	_ = os.Remove(archivePath)
+	defer os.Remove(archivePath)
+	if _, err := h.management.Export(management.ArchiveRequest{Path: archivePath}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "export failed: " + err.Error()})
+		return
+	}
+	zipData, err := os.ReadFile(archivePath)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "export failed: " + err.Error()})
 		return
@@ -176,14 +194,21 @@ func (h *Handler) Import(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "save import: " + err.Error()})
 		return
 	}
-	result, err := h.deps.Restore.Restore(stagedPath)
+	submission, err := h.management.Import(management.ImportRequest{Path: stagedPath, Confirm: true})
 	if err != nil {
-		status := http.StatusInternalServerError
-		if result.Stage == RestoreStageValidate {
-			status = http.StatusBadRequest
-		}
-		c.JSON(status, gin.H{"status": "failed", "stage": result.Stage, "rolled_back": result.RolledBack, "error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"status": "failed", "stage": RestoreStageValidate, "error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "ok", "stage": result.Stage, "snapshot_path": result.SnapshotPath})
+	task, found, waitErr := h.management.Tasks().Wait(context.Background(), submission.TaskID)
+	if waitErr != nil || !found || task.State != management.TaskSucceeded {
+		errorText := "import failed"
+		if waitErr != nil {
+			errorText = waitErr.Error()
+		} else if found && task.Error != "" {
+			errorText = task.Error
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"status": "failed", "stage": RestoreStageValidate, "error": errorText})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "stage": RestoreStageComplete})
 }

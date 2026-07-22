@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/Wrath-y/local-rag/internal/management"
 	"github.com/Wrath-y/local-rag/internal/observe"
 	"github.com/Wrath-y/local-rag/internal/provider"
 	"github.com/Wrath-y/local-rag/internal/store"
@@ -48,9 +49,10 @@ type indexRebuildCoordinator struct {
 	stores   *StoreLifecycle
 	embedder provider.EmbedProvider
 	dims     int
+	service  *management.Service
 }
 
-func newIndexRebuildCoordinator(stores *StoreLifecycle, embedder provider.EmbedProvider, dims int) *indexRebuildCoordinator {
+func newIndexRebuildCoordinator(stores *StoreLifecycle, embedder provider.EmbedProvider, dims int, service *management.Service) *indexRebuildCoordinator {
 	if dims <= 0 && embedder != nil {
 		dims = embedder.Dims()
 	}
@@ -58,6 +60,7 @@ func newIndexRebuildCoordinator(stores *StoreLifecycle, embedder provider.EmbedP
 		stores:   stores,
 		embedder: embedder,
 		dims:     dims,
+		service:  service,
 		status:   IndexStatusResponse{State: IndexStateNormal},
 	}
 }
@@ -75,6 +78,19 @@ func (r *indexRebuildCoordinator) Start() (IndexStatusResponse, bool, error) {
 	defer r.mu.Unlock()
 	if r.status.State == IndexStateRebuilding {
 		return r.status, false, nil
+	}
+	if r.service != nil {
+		submission, err := r.service.IndexRebuild()
+		if err != nil {
+			return r.status, false, err
+		}
+		now := time.Now().UTC()
+		r.status = IndexStatusResponse{State: IndexStateRebuilding, TaskID: submission.TaskID, StartedAt: &now}
+		observe.IndexRebuildActive.Set(1)
+		observe.IndexRebuildProgress.Set(0)
+		observe.IndexRebuildTotal.WithLabelValues("submitted").Inc()
+		go r.observeSharedTask(submission.TaskID)
+		return r.status, true, nil
 	}
 	if r.embedder == nil || r.dims <= 0 {
 		return r.status, false, fmt.Errorf("index rebuild is unavailable: embedding provider is not configured")
@@ -98,10 +114,44 @@ func (r *indexRebuildCoordinator) Start() (IndexStatusResponse, bool, error) {
 	return r.status, true, nil
 }
 
+func (r *indexRebuildCoordinator) observeSharedTask(taskID string) {
+	task, found, err := r.service.Tasks().Wait(context.Background(), taskID)
+	now := time.Now().UTC()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.status.TaskID != taskID {
+		return
+	}
+	r.status.CompletedAt = &now
+	if err != nil || !found || task.State == management.TaskFailed {
+		r.status.State = IndexStateFailed
+		if found {
+			r.status.Processed, r.status.Total, r.status.Progress = task.Processed, task.Total, task.Progress
+			r.status.Error = task.Error
+		}
+		if r.status.Error == "" && err != nil {
+			r.status.Error = err.Error()
+		}
+		if strings.HasPrefix(r.status.Error, "embedding:") {
+			r.status.ErrorCategory = "embedding"
+		} else {
+			r.status.ErrorCategory = "rebuild"
+		}
+		observe.IndexRebuildTotal.WithLabelValues("failure").Inc()
+	} else {
+		r.status.State = IndexStateNormal
+		r.status.Processed, r.status.Total = task.Processed, task.Total
+		r.status.Progress = 1
+		observe.IndexRebuildProgress.Set(1)
+		observe.IndexRebuildTotal.WithLabelValues("success").Inc()
+	}
+	observe.IndexRebuildActive.Set(0)
+}
+
 func (r *indexRebuildCoordinator) run(taskID string, started time.Time) {
 	defer r.stores.EndRebuild()
 	defer observe.IndexRebuildActive.Set(0)
-	defer observe.IndexRebuildDuration.Observe(time.Since(started).Seconds())
+	defer func() { observe.IndexRebuildDuration.Observe(time.Since(started).Seconds()) }()
 	suffix := strings.ReplaceAll(taskID, "-", "")
 	shadowName := "vec_chunks_rebuild_" + suffix
 	retiredName := "vec_chunks_retired_" + suffix

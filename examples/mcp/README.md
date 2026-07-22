@@ -82,6 +82,16 @@ MCP mode calls internal services (store, embedder, chunker) directly — no HTTP
 | `rag_list_sources` | List all sources with chunk counts | none |
 | `rag_delete_source` | Delete all chunks from a source | `source` (required) |
 | `rag_status` | Service status and total chunk count | none |
+| `rag_update_source` | Safely replace a source asynchronously | `source`, `content`, `confirm: true` |
+| `rag_reset` | Clear the knowledge base asynchronously | `confirm: true` |
+| `rag_export` | Create a local export archive | optional absolute local `.zip` `path` |
+| `rag_import` | Import a local export asynchronously | absolute local `path`, `confirm: true` |
+| `rag_backup_run` / `rag_backup_list` | Create or list local backups | none |
+| `rag_backup_restore` | Restore a local backup asynchronously | absolute local `path`, `confirm: true` |
+| `rag_storage_integrity_check` | Run SQLite integrity check | none |
+| `rag_index_rebuild` / `rag_index_status` | Rebuild embeddings or inspect index availability | none |
+| `rag_retrieval_config_get` / `rag_retrieval_config_set` | Inspect or atomically patch runtime retrieval settings | partial supported settings for `set` |
+| `rag_task_status` | Poll an asynchronous management operation | `task_id` |
 
 ---
 
@@ -138,6 +148,33 @@ Response: `Deleted 3 chunks from source "redis-guide".`
 ```
 
 Response: `RAG Status: OK | Total chunks: 15`
+
+### Destructive management and task polling
+
+Destructive calls require the literal JSON boolean `true`; omission, strings,
+and `false` are rejected before work is queued. Import/export paths are local,
+absolute filesystem paths. Archive bytes are not sent through MCP.
+
+```json
+{"source":"redis-guide","content":"replacement content","confirm":true}
+```
+
+The result includes a `task_id` and `status: "queued"`. Poll it until it is
+terminal:
+
+```json
+{"task_id":"opaque-task-id"}
+```
+
+`rag_task_status` reports `queued`, `running`, `succeeded`, or `failed`, plus
+safe error/result metadata. Task records are bounded, in-memory, and disappear
+when the MCP process restarts.
+
+To export locally:
+
+```json
+{"path":"/absolute/path/rag-export.zip"}
+```
 
 ---
 

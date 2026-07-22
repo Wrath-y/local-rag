@@ -8,7 +8,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/Wrath-y/local-rag/internal/observe"
-	"github.com/Wrath-y/local-rag/internal/store"
 )
 
 // Health returns the service health status.
@@ -36,12 +35,7 @@ func (h *Handler) Metrics(c *gin.Context) {
 
 // IntegrityCheck runs SQLite integrity_check and returns the result.
 func (h *Handler) IntegrityCheck(c *gin.Context) {
-	var result string
-	err := h.deps.Stores.WithStore(func(st *store.Store) error {
-		var integrityErr error
-		result, integrityErr = st.IntegrityCheck()
-		return integrityErr
-	})
+	result, err := h.management.IntegrityCheck()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

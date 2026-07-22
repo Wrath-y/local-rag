@@ -15,6 +15,7 @@ import (
 	"github.com/Wrath-y/local-rag/internal/chunk"
 	"github.com/Wrath-y/local-rag/internal/config"
 	"github.com/Wrath-y/local-rag/internal/handler"
+	"github.com/Wrath-y/local-rag/internal/management"
 	"github.com/Wrath-y/local-rag/internal/mcpserver"
 	"github.com/Wrath-y/local-rag/internal/observe"
 	"github.com/Wrath-y/local-rag/internal/provider"
@@ -226,13 +227,20 @@ func runMCP(cfg *config.Config) {
 	chunker := chunk.NewChunker(cfg.Chunk, embedder, llm)
 
 	// Run MCP server (blocks until client disconnects).
-	deps := mcpserver.Deps{
+	managementService := management.New(management.Deps{
 		Config:   cfg,
 		Store:    st,
 		Embedder: embedder,
-		Reranker: reranker,
-		LLM:      llm,
 		Chunker:  chunker,
+	})
+	deps := mcpserver.Deps{
+		Config:     cfg,
+		Store:      st,
+		Embedder:   embedder,
+		Reranker:   reranker,
+		LLM:        llm,
+		Chunker:    chunker,
+		Management: managementService,
 	}
 	if err := mcpserver.Run(context.Background(), deps); err != nil {
 		fmt.Fprintf(os.Stderr, "MCP server error: %v\n", err)

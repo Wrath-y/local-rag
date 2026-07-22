@@ -72,6 +72,15 @@ func (l *StoreLifecycle) Rebuilding() bool {
 	return l.rebuilding
 }
 
+// Store returns the current backing store for services that do not replace the
+// database file. Restore paths must continue using RestoreService so a swapped
+// store is coordinated with the lifecycle lock.
+func (l *StoreLifecycle) Store() *store.Store {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.store
+}
+
 // WithExclusiveStore is reserved for the short atomic cutover/rollback phase.
 func (l *StoreLifecycle) WithExclusiveStore(fn func(*store.Store) error) error {
 	l.mu.Lock()
