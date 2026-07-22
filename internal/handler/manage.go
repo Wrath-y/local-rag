@@ -76,6 +76,14 @@ func (h *Handler) Stats(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	hookSnapshot := h.hookObservations.Snapshot()
+	stats["hook_observability"] = gin.H{
+		"total_enabled_attempts": hookSnapshot.TotalEnabledAttempts,
+		"outcomes":               hookSnapshot.Outcomes,
+		"latest":                 hookSnapshot.Latest,
+		"verbose_enabled":        h.verboseEnabled,
+		"reset_on_restart":       true,
+	}
 	c.JSON(http.StatusOK, stats)
 }
 

@@ -1,4 +1,4 @@
-查看 RAG 服务状态、chunk 总数、检索命中率统计及存储一致性
+查看 RAG 服务状态、chunk 总数、检索命中率统计、Hook 结果与存储一致性
 
 **第一步：获取服务状态**
 
@@ -32,8 +32,10 @@ curl -s -w "\n__HTTP_CODE__:%{http_code}" http://127.0.0.1:8765/storage/integrit
 - 当前 chunk 总数
 - rerank / verbose 开关状态
 - 检索总次数、零命中次数、命中率（%）、平均每次返回 chunk 数
+- Hook 观测：`hook_observability.total_enabled_attempts`、五种结果（`injected`、`no_results`、`timeout`、`service_unavailable`、`invalid_response`）的计数，以及 `latest` 的安全元数据
+- 将 `timeout`、`service_unavailable`、`invalid_response` 明确标注为“已按 fail-open 策略放行”；这些结果不会阻塞用户对话
 - **最近提交时间**（committed_at）与存储一致性状态
 
-> 统计数据在服务重启后重置（仅内存计数）。存储 manifest 跨重启保留。
+> 检索与 Hook 统计数据均为进程内计数，服务重启后重置；Hook 状态不包含 prompt、transcript、响应体或注入上下文。存储 manifest 跨重启保留。
 
 服务未启动时提示用户运行 `./start.sh`。

@@ -105,6 +105,15 @@ var (
 	IndexRebuildActive = prometheus.NewGauge(
 		prometheus.GaugeOpts{Name: "rag_index_rebuild_active", Help: "Whether an index rebuild is currently active"},
 	)
+
+	HookOutcomesTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{Name: "rag_hook_outcomes_total", Help: "Total enabled RAG hook attempts by terminal outcome"},
+		[]string{"outcome"},
+	)
+
+	HookLatency = prometheus.NewHistogram(
+		prometheus.HistogramOpts{Name: "rag_hook_latency_seconds", Help: "RAG hook attempt latency", Buckets: prometheus.DefBuckets},
+	)
 )
 
 func InitMetrics() {
@@ -124,6 +133,8 @@ func InitMetrics() {
 		IndexRebuildDuration,
 		IndexRebuildProgress,
 		IndexRebuildActive,
+		HookOutcomesTotal,
+		HookLatency,
 	)
 }
 

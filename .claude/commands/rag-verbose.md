@@ -12,7 +12,7 @@ curl -s -X POST "http://127.0.0.1:8765/retrieve/verbose?enabled=true"
 curl -s -X POST "http://127.0.0.1:8765/retrieve/verbose?enabled=false"
 ```
 
-- `on`：开启详细日志，每次检索在服务端输出候选数量、得分明细、rerank 排序等信息
+- `on`：开启详细日志，每次检索在服务端输出候选数量、得分明细、rerank 排序等信息；同时输出 Hook 的安全终态元数据（结果、耗时、受限 reason code）
 - `off`：关闭详细日志，检索静默执行
 
-告知用户当前 verbose 状态。服务未启动时提示运行 `./start.sh`。
+无论开关状态，Hook 日志和诊断永不包含 prompt、prompt 哈希、transcript 路径/内容、响应体或注入上下文。告知用户当前 verbose 状态。服务未启动时提示运行 `./start.sh`。

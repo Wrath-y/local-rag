@@ -2,16 +2,17 @@ package handler
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
 
 // validChunkStrategies is the set of allowed chunking strategy names.
 var validChunkStrategies = map[string]bool{
-	"fixed":       true,
-	"structure":   true,
-	"semantic":    true,
-	"agentic":     true,
+	"fixed":        true,
+	"structure":    true,
+	"semantic":     true,
+	"agentic":      true,
 	"hierarchical": true,
 }
 
@@ -21,8 +22,18 @@ func (h *Handler) RerankToggle(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"rerank_enabled": h.rerankEnabled})
 }
 
-// VerboseToggle toggles verbose logging on/off.
+// VerboseToggle toggles verbose logging, or sets it explicitly with ?enabled=true|false.
 func (h *Handler) VerboseToggle(c *gin.Context) {
+	if raw, present := c.GetQuery("enabled"); present {
+		enabled, err := strconv.ParseBool(raw)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "enabled must be true or false"})
+			return
+		}
+		h.verboseEnabled = enabled
+		c.JSON(http.StatusOK, gin.H{"verbose_enabled": h.verboseEnabled})
+		return
+	}
 	h.verboseEnabled = !h.verboseEnabled
 	c.JSON(http.StatusOK, gin.H{"verbose_enabled": h.verboseEnabled})
 }

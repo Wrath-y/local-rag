@@ -57,6 +57,7 @@ func main() {
 	}
 
 	observe.InitLogger(cfg.Log.Level, cfg.Log.Format)
+	observe.InitMetrics()
 
 	// Start sidecar (only used when embedding provider is "local").
 	sc := sidecar.New(sidecar.Config{
@@ -123,6 +124,7 @@ func main() {
 	r.POST("/ingest", h.Ingest)
 	r.POST("/retrieve", h.Retrieve)
 	r.POST("/hook", h.Hook)
+	r.POST("/hook/outcome", h.HookOutcomeReport)
 
 	// Toggle routes.
 	r.POST("/rerank/toggle", h.RerankToggle)

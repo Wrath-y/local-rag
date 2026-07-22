@@ -3,6 +3,7 @@ package handler
 import (
 	"github.com/Wrath-y/local-rag/internal/chunk"
 	"github.com/Wrath-y/local-rag/internal/config"
+	"github.com/Wrath-y/local-rag/internal/observe"
 	"github.com/Wrath-y/local-rag/internal/provider"
 	"github.com/Wrath-y/local-rag/internal/store"
 )
@@ -21,8 +22,9 @@ type Deps struct {
 
 // Handler is the HTTP handler collection.
 type Handler struct {
-	deps         Deps
-	indexRebuild *indexRebuildCoordinator
+	deps             Deps
+	indexRebuild     *indexRebuildCoordinator
+	hookObservations *observe.HookObservations
 
 	// runtime toggleable state
 	rerankEnabled        bool
@@ -58,5 +60,6 @@ func New(deps Deps) *Handler {
 		dims = deps.Config.Embedding.Dims
 	}
 	h.indexRebuild = newIndexRebuildCoordinator(deps.Stores, deps.Embedder, dims)
+	h.hookObservations = observe.NewHookObservations()
 	return h
 }
