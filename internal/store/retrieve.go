@@ -125,6 +125,12 @@ func (s *Store) Retrieve(queryVec []float32, queryText string, opts RetrieveOpts
 		ranked = append(ranked, c)
 	}
 	sort.Slice(ranked, func(i, j int) bool {
+		if ranked[i].finalScore == ranked[j].finalScore {
+			// Candidate construction uses a map. A stable secondary key keeps
+			// production responses and offline evaluation reproducible when two
+			// candidates have the same fused score.
+			return ranked[i].id < ranked[j].id
+		}
 		return ranked[i].finalScore > ranked[j].finalScore
 	})
 	if len(ranked) > opts.TopK {

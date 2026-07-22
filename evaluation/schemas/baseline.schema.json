@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Approved retrieval evaluation baseline v1",
+  "type": "object",
+  "required": ["schema_version", "dataset", "configuration", "metrics"],
+  "properties": {
+    "schema_version": {"const": "retrieval-evaluation/v1"},
+    "dataset": {"type": "object", "required": ["version", "corpus_digest", "cases_digest"]},
+    "configuration": {"type": "object", "required": ["embedding_dims", "top_k", "candidate_multiplier", "vector_weight", "bm25_weight", "rerank_enabled"]},
+    "metrics": {"type": "object", "required": ["recall_at_k", "mrr", "ndcg", "source_hit_rate"]}
+  }
+}

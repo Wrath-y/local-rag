@@ -10,7 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/Wrath-y/local-rag/internal/observe"
-	"github.com/Wrath-y/local-rag/internal/store"
+	"github.com/Wrath-y/local-rag/internal/retrieval"
 )
 
 type retrieveRequest struct {
@@ -66,64 +66,15 @@ func (h *Handler) doRetrieve(text string, contextTokensUsed int) ([]string, erro
 		}
 	}
 
-	opts := store.RetrieveOpts{
-		TopK:                topK,
-		CandidateMultiplier: cfg.Retrieve.CandidateMultiplier,
-		VectorWeight:        cfg.Retrieve.ScoreWeights.Vector,
-		BM25Weight:          cfg.Retrieve.ScoreWeights.BM25,
-	}
-
-	// Embed the query.
-	queryPrefix := cfg.Embedding.QueryPrefix
-	queryText := text
-	if queryPrefix != "" {
-		queryText = queryPrefix + text
-	}
-
-	vecs, err := h.deps.Embedder.Embed(context.Background(), []string{queryText})
+	results, err := (retrieval.Service{
+		Config:        cfg,
+		Embedder:      h.deps.Embedder,
+		Reranker:      h.deps.Reranker,
+		RerankEnabled: h.rerankEnabled,
+		Stores:        h.deps.Stores.WithStore,
+	}).Retrieve(context.Background(), text, topK)
 	if err != nil {
-		return nil, fmt.Errorf("embed query: %w", err)
-	}
-	if len(vecs) == 0 {
-		return nil, fmt.Errorf("embedder returned no vectors")
-	}
-	queryVec := vecs[0]
-
-	// Hybrid retrieval under the lifecycle read lock.
-	var results []store.RetrieveResult
-	err = h.deps.Stores.WithStore(func(st *store.Store) error {
-		var retrieveErr error
-		results, retrieveErr = st.Retrieve(queryVec, text, opts)
-		return retrieveErr
-	})
-	if err != nil {
-		return nil, fmt.Errorf("retrieve: %w", err)
-	}
-
-	// Optional rerank.
-	if h.rerankEnabled && h.deps.Reranker != nil && len(results) > 0 {
-		docs := make([]string, len(results))
-		for i, r := range results {
-			docs[i] = r.Text
-		}
-		topN := cfg.Retrieve.RerankCandidates
-		if topN <= 0 || topN > len(docs) {
-			topN = len(docs)
-		}
-		reranked, err := h.deps.Reranker.Rerank(context.Background(), text, docs, topN)
-		if err == nil && len(reranked) > 0 {
-			// Reorder results according to rerank order.
-			rerankedResults := make([]store.RetrieveResult, 0, len(reranked))
-			for _, rr := range reranked {
-				if rr.Index >= 0 && rr.Index < len(results) {
-					rerankedResults = append(rerankedResults, results[rr.Index])
-				}
-			}
-			if len(rerankedResults) > 0 {
-				results = rerankedResults
-			}
-		}
-		// If rerank fails, fall through with original ordering.
+		return nil, err
 	}
 
 	// Format results.

@@ -1,0 +1,3 @@
+{"id":"redis-penetration","query":"How do I prevent Redis cache penetration?","embedding":[1,0,0],"targets":[{"chunk_id":"redis-cache","grade":2},{"source":"redis-guide","grade":1}],"labels":["cache","redis"]}
+{"id":"mysql-leftmost","query":"What is the MySQL leftmost prefix rule?","embedding":[0,1,0],"targets":[{"chunk_id":"mysql-index","grade":2}],"labels":["database"]}
+{"id":"kubernetes-rollout","query":"How are Kubernetes rolling deployments made safe?","embedding":[0,0,1],"targets":[{"chunk_id":"kubernetes-rollout","grade":2}],"labels":["kubernetes"]}

@@ -1,0 +1,23 @@
+{
+  "schema_version": "retrieval-evaluation/v1",
+  "dataset": {
+    "version": "golden-v1",
+    "corpus_digest": "b6754472350877067fe6b928f77ea1f7e3a59d54aab5fa7bff5d07e2c0aeb33b",
+    "cases_digest": "5c44e0b23ab96185e922274ecdc9227ace9f287bb9dd240fde7ce1b52cb37ff6"
+  },
+  "configuration": {
+    "embedding_dims": 3,
+    "query_prefix": "查询：",
+    "top_k": 3,
+    "candidate_multiplier": 2,
+    "vector_weight": 0.7,
+    "bm25_weight": 0.3,
+    "rerank_enabled": false
+  },
+  "metrics": {
+    "recall_at_k": 1,
+    "mrr": 1,
+    "ndcg": 1,
+    "source_hit_rate": 1
+  }
+}

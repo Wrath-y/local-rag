@@ -14,6 +14,8 @@
 
 📖 [中文文档](README_zh.md)
 
+🧪 [Retrieval evaluation](docs/retrieval-evaluation.md)
+
 </div>
 
 ---

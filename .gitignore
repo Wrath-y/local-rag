@@ -35,12 +35,14 @@ logs/
 .DS_Store
 
 # 开发计划
-docs
+docs/*
+!docs/retrieval-evaluation.md
 openspec
 
 # Go build artifacts
 rag-server
 .rag-server.pid
+artifacts/
 data/
 backups/
 

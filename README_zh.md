@@ -10,7 +10,7 @@
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Plugin-orange?style=flat-square)](https://claude.ai/code)
 
-[安装](#安装) · [使用方法](#使用方法) · [配置](#配置) · [架构](#架构) · [命令汇总](#命令汇总) · [工作原理](#工作原理) · [FAQ](#faq)
+[安装](#安装) · [使用方法](#使用方法) · [检索评估](#检索评估) · [配置](#配置) · [架构](#架构) · [命令汇总](#命令汇总) · [工作原理](#工作原理) · [FAQ](#faq)
 
 📖 [English](README.md)
 
@@ -164,6 +164,27 @@ curl -s http://127.0.0.1:8765/index/status
 ```
 
 > 首次开启下载 `BAAI/bge-reranker-base` 模型（约 400MB），之后进程内复用。每次检索额外约 50～200ms，不消耗 token。
+
+---
+
+## 检索评估
+
+内置离线评估器使用确定性的本地 fixture corpus，并调用与 HTTP/Hook 相同的结构化检索路径。它只评估检索结果，不访问生产数据库、不生成回答，也不会调用 LLM 或 LLM 评审。
+
+```bash
+go run ./cmd/eval
+```
+
+命令会验证 `evaluation/fixtures/golden-v1`，将可复现的结果快照保存到 `artifacts/retrieval-evaluation.json`，并与已批准基线比较 Recall@K、MRR、nDCG 和来源命中率。任何指标的下降超过 `tolerances.json` 中配置的绝对容差时，命令会以非零状态退出，并输出基线、观测值、阈值、目标和每条查询的排序证据。
+
+基线更新需要维护者显式确认套件版本，例如：
+
+```bash
+go run ./cmd/eval --output artifacts/retrieval-evaluation.json \
+  --update-baseline --approve golden-v1
+```
+
+提交新的 fixture、相关性标签、容差或基线前，应一并审查它们。完整的格式、版本演进和 CI 使用说明见 [检索评估文档](docs/retrieval-evaluation.md)。
 
 ---
 
@@ -359,17 +380,21 @@ curl http://127.0.0.1:8765/metrics
 
 ```
 local-rag/
+├── cmd/eval/main.go            # 离线检索评估命令
 ├── cmd/server/main.go          # 入口
 ├── internal/
 │   ├── config/                 # YAML 配置加载
 │   ├── provider/               # Embed/Rerank/LLM 接口 + 实现
 │   ├── store/                  # SQLite + vec0 + FTS5
 │   ├── chunk/                  # 4 种分块策略
+│   ├── eval/                   # 确定性检索评估、指标与基线比较
 │   ├── handler/                # 全部 HTTP 端点
 │   ├── agent/                  # Agent 对话 + 工具调用
 │   ├── sidecar/                # Python 进程管理
 │   ├── retrieve/               # 查询改写
+│   ├── retrieval/              # 生产共用的结构化检索组合
 │   └── observe/                # 指标 + 日志
+├── evaluation/                 # 版本化 fixture、基线、容差与 schema
 ├── sidecar/
 │   ├── main.py                 # Python embedding/rerank 微服务
 │   └── requirements.txt

@@ -1,0 +1,4 @@
+{"id":"redis-cache","text":"Redis cache penetration is mitigated with null caching and a Bloom filter.","source":"redis-guide","embedding":[1,0,0]}
+{"id":"mysql-index","text":"MySQL composite indexes follow the leftmost-prefix rule.","source":"mysql-guide","embedding":[0,1,0]}
+{"id":"kubernetes-rollout","text":"Kubernetes deployments use rolling updates and readiness probes.","source":"kubernetes-guide","embedding":[0,0,1]}
+{"id":"redis-cluster","text":"Redis Cluster shards keys across hash slots for horizontal scaling.","source":"redis-guide","embedding":[0.9,0.1,0]}

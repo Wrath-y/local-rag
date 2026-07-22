@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Retrieval evaluation case v1",
+  "type": "object",
+  "required": ["id", "query", "embedding", "targets"],
+  "properties": {
+    "id": {"type": "string", "minLength": 1},
+    "query": {"type": "string", "minLength": 1},
+    "embedding": {"type": "array", "minItems": 1, "items": {"type": "number"}},
+    "targets": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/target"}},
+    "labels": {"type": "array", "items": {"type": "string"}}
+  },
+  "$defs": {
+    "target": {
+      "type": "object",
+      "anyOf": [{"required": ["chunk_id"]}, {"required": ["source"]}],
+      "properties": {"chunk_id": {"type": "string", "minLength": 1}, "source": {"type": "string", "minLength": 1}, "grade": {"type": "integer", "minimum": 0}}
+    }
+  }
+}

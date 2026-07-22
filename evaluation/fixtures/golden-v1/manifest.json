@@ -1,0 +1,6 @@
+{
+  "schema_version": "retrieval-evaluation/v1",
+  "version": "golden-v1",
+  "corpus": "corpus.jsonl",
+  "cases": "cases.jsonl"
+}
