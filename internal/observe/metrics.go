@@ -88,6 +88,23 @@ var (
 			Buckets: prometheus.DefBuckets,
 		},
 	)
+
+	IndexRebuildTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{Name: "rag_index_rebuild_total", Help: "Index rebuild attempts by outcome"},
+		[]string{"outcome"},
+	)
+
+	IndexRebuildDuration = prometheus.NewHistogram(
+		prometheus.HistogramOpts{Name: "rag_index_rebuild_duration_seconds", Help: "Index rebuild duration", Buckets: prometheus.DefBuckets},
+	)
+
+	IndexRebuildProgress = prometheus.NewGauge(
+		prometheus.GaugeOpts{Name: "rag_index_rebuild_progress", Help: "Progress ratio of the current or latest rebuild"},
+	)
+
+	IndexRebuildActive = prometheus.NewGauge(
+		prometheus.GaugeOpts{Name: "rag_index_rebuild_active", Help: "Whether an index rebuild is currently active"},
+	)
 )
 
 func InitMetrics() {
@@ -103,6 +120,10 @@ func InitMetrics() {
 		LastBackupTimestamp,
 		RestoreTotal,
 		RestoreLatency,
+		IndexRebuildTotal,
+		IndexRebuildDuration,
+		IndexRebuildProgress,
+		IndexRebuildActive,
 	)
 }
 

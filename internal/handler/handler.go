@@ -21,7 +21,8 @@ type Deps struct {
 
 // Handler is the HTTP handler collection.
 type Handler struct {
-	deps Deps
+	deps         Deps
+	indexRebuild *indexRebuildCoordinator
 
 	// runtime toggleable state
 	rerankEnabled        bool
@@ -47,9 +48,15 @@ func New(deps Deps) *Handler {
 			strategy = "fixed"
 		}
 	}
-	return &Handler{
+	h := &Handler{
 		deps:                 deps,
 		queryRewriteStrategy: "expansion",
 		chunkStrategy:        strategy,
 	}
+	dims := 0
+	if deps.Config != nil {
+		dims = deps.Config.Embedding.Dims
+	}
+	h.indexRebuild = newIndexRebuildCoordinator(deps.Stores, deps.Embedder, dims)
+	return h
 }

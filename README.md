@@ -141,6 +141,19 @@ curl -s -X POST http://127.0.0.1:8765/import \
 
 Responses include a `stage` (`validate`, `snapshot`, `replace`, `reload`, `integrity`, or `complete`) and `rolled_back` state. Restore metrics are exposed as `rag_restore_total` and `rag_restore_duration_seconds`; logs never include document text.
 
+### ♻️ Rebuild the Vector Index
+
+Use an index rebuild after changing embedding models or dimensions, or to repair vectors. The rebuild is asynchronous: it snapshots chunk IDs and text, generates vectors in a shadow index, validates the count, IDs, dimensions, and a representative lookup, then transactionally replaces the active vectors. Retrieval continues on the old index until that cutover succeeds.
+
+```bash
+curl -s -X POST http://127.0.0.1:8765/index/rebuild
+curl -s http://127.0.0.1:8765/index/status
+```
+
+`POST /index/rebuild` returns `202 Accepted` with a task ID. A second request while work is running returns `409 Conflict` and the active task. `GET /index/status` reports `normal`, `rebuilding`, `failed`, or `read-only`, plus timestamps, processed/total counts, progress, and a safe error category for failed tasks.
+
+While rebuilding, writes (ingest, source deletion, reset, and import) return `503 Service Unavailable`; retry them after the status is terminal. This deliberate temporary rejection avoids silently losing writes from a snapshot. Failed embedding, validation, cutover, or integrity checks preserve (or restore) the prior active index. The prior index is retained in SQLite for recovery. Prometheus exposes `rag_index_rebuild_total`, `rag_index_rebuild_duration_seconds`, `rag_index_rebuild_progress`, and `rag_index_rebuild_active`; their labels never contain document or query text.
+
 ### 🎯 Rerank
 
 Enable cross-encoder reranking for higher relevance precision:

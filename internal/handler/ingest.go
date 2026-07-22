@@ -60,7 +60,7 @@ func (h *Handler) Ingest(c *gin.Context) {
 
 	// 4. Store each chunk under the lifecycle read lock.
 	added := 0
-	err = h.deps.Stores.WithStore(func(st *store.Store) error {
+	err = h.deps.Stores.WithWriteStore(func(st *store.Store) error {
 		for i, ch := range chunks {
 			id, err := st.InsertChunk(
 				ch.Text, ch.Source, ch.MD5,
@@ -77,6 +77,10 @@ func (h *Handler) Ingest(c *gin.Context) {
 		return nil
 	})
 	if err != nil {
+		if err == ErrRebuildInProgress {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "store failed: " + err.Error()})
 		return
 	}

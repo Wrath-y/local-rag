@@ -15,12 +15,16 @@ import (
 // ListSources returns all indexed sources with chunk counts.
 func (h *Handler) ListSources(c *gin.Context) {
 	var sources []store.SourceInfo
-	err := h.deps.Stores.WithStore(func(st *store.Store) error {
+	err := h.deps.Stores.WithWriteStore(func(st *store.Store) error {
 		var listErr error
 		sources, listErr = st.ListSources()
 		return listErr
 	})
 	if err != nil {
+		if err == ErrRebuildInProgress {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -49,7 +53,11 @@ func (h *Handler) DeleteSource(c *gin.Context) {
 
 // Reset removes all chunks from the store.
 func (h *Handler) Reset(c *gin.Context) {
-	if err := h.deps.Stores.WithStore(func(st *store.Store) error { return st.Reset() }); err != nil {
+	if err := h.deps.Stores.WithWriteStore(func(st *store.Store) error { return st.Reset() }); err != nil {
+		if err == ErrRebuildInProgress {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -132,6 +140,10 @@ func embeddingSummary(embedding config.EmbeddingConfig) EmbeddingSummary {
 
 // Import replaces the database from a confirmed uploaded backup package.
 func (h *Handler) Import(c *gin.Context) {
+	if h.deps.Stores.Rebuilding() {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": ErrRebuildInProgress.Error()})
+		return
+	}
 	if c.PostForm("confirm") != "true" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "confirm must be true"})
 		return

@@ -141,6 +141,19 @@ curl -s -X POST http://127.0.0.1:8765/import \
 
 响应包括阶段 `stage`（`validate`、`snapshot`、`replace`、`reload`、`integrity` 或 `complete`）和 `rolled_back` 状态。恢复指标：`rag_restore_total`、`rag_restore_duration_seconds`；日志不会记录文档正文。
 
+### ♻️ 重建向量索引
+
+在更换 embedding 模型或维度、修复历史向量时，可发起索引重建。重建为异步任务：服务会先快照 chunk ID 和文本，在影子索引中分批生成向量，并校验数量、ID、维度和一次代表性检索；全部通过后才以事务方式替换活动向量。切换成功前，检索始终使用旧索引。
+
+```bash
+curl -s -X POST http://127.0.0.1:8765/index/rebuild
+curl -s http://127.0.0.1:8765/index/status
+```
+
+`POST /index/rebuild` 会返回带任务 ID 的 `202 Accepted`；重建期间重复调用会返回 `409 Conflict` 及当前任务。`GET /index/status` 返回 `normal`、`rebuilding`、`failed` 或 `read-only`，并包含时间戳、已处理/总数、进度和失败任务的安全错误分类。
+
+重建期间，写入操作（入库、删除来源、重置和导入）会返回 `503 Service Unavailable`，请在任务结束后重试。这一临时拒绝策略可避免快照期间静默丢失写入。embedding、校验、切换或完整性检查失败时，会保留或恢复先前的活动索引；旧索引会保留在 SQLite 中以供恢复。Prometheus 指标包括 `rag_index_rebuild_total`、`rag_index_rebuild_duration_seconds`、`rag_index_rebuild_progress` 和 `rag_index_rebuild_active`，其标签不包含文档或查询文本。
+
 ### 🎯 Rerank 精排
 
 开启后，检索结果经 cross-encoder 二次排序，提升相关性精度：
