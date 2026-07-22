@@ -2,13 +2,12 @@ package handler
 
 import (
 	"context"
-	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/Wrath-y/local-rag/internal/citation"
 	"github.com/Wrath-y/local-rag/internal/observe"
 	"github.com/Wrath-y/local-rag/internal/retrieval"
 )
@@ -30,18 +29,25 @@ func (h *Handler) Retrieve(c *gin.Context) {
 		return
 	}
 
-	chunks, err := h.doRetrieve(req.Text, req.ContextTokensUsed)
+	evidence, err := h.doRetrieveEvidence(req.Text, req.ContextTokensUsed)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
+	manifest := h.citations.Create(evidence)
+	chunks := citation.RenderChunks(evidence)
 	observe.RetrieveTotal.WithLabelValues(boolLabel(len(chunks) > 0)).Inc()
-	c.JSON(http.StatusOK, gin.H{"chunks": chunks})
+	c.JSON(http.StatusOK, gin.H{
+		"chunks":         chunks,
+		"citations":      manifest.Citations,
+		"evidence_token": manifest.Token,
+	})
 }
 
-// doRetrieve encapsulates the shared retrieve logic used by Retrieve and Hook.
-func (h *Handler) doRetrieve(text string, contextTokensUsed int) ([]string, error) {
+// doRetrieveEvidence encapsulates ranked retrieval and deterministic evidence
+// assignment. Endpoint-specific callers own their request-scoped manifests.
+func (h *Handler) doRetrieveEvidence(text string, contextTokensUsed int) ([]citation.Evidence, error) {
 	start := time.Now()
 	defer func() {
 		observe.RetrieveLatency.Observe(time.Since(start).Seconds())
@@ -76,18 +82,28 @@ func (h *Handler) doRetrieve(text string, contextTokensUsed int) ([]string, erro
 	if err != nil {
 		return nil, err
 	}
+	return citation.EvidenceFromResults(results), nil
+}
 
-	// Format results.
-	chunks := make([]string, 0, len(results))
-	for _, r := range results {
-		displayText := r.Text
-		if r.ParentText != "" {
-			displayText = r.ParentText
-		}
-		chunks = append(chunks, fmt.Sprintf("[来源: %s]\n%s", r.Source, strings.TrimSpace(displayText)))
+type citationValidationRequest struct {
+	EvidenceToken string `json:"evidence_token" binding:"required"`
+	Answer        string `json:"answer"`
+}
+
+// ValidateCitations validates answer labels against exactly the manifest that
+// was returned for its retrieval request. Tokens are short-lived and opaque.
+func (h *Handler) ValidateCitations(c *gin.Context) {
+	var req citationValidationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
-
-	return chunks, nil
+	validation, ok := h.citations.Validate(req.EvidenceToken, req.Answer)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "evidence manifest not found or expired"})
+		return
+	}
+	c.JSON(http.StatusOK, validation)
 }
 
 func boolLabel(b bool) string {

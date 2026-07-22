@@ -123,6 +123,7 @@ func main() {
 	// Core routes.
 	r.POST("/ingest", h.Ingest)
 	r.POST("/retrieve", h.Retrieve)
+	r.POST("/citations/validate", h.ValidateCitations)
 	r.POST("/hook", h.Hook)
 	r.POST("/hook/outcome", h.HookOutcomeReport)
 

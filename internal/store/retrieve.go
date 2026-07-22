@@ -15,14 +15,18 @@ type RetrieveOpts struct {
 
 // RetrieveResult holds one ranked result from the hybrid search.
 type RetrieveResult struct {
-	ID         int64
-	Text       string
-	Source     string
-	ParentText string
-	ParentID   string
-	VecScore   float64
-	BM25Score  float64
-	FinalScore float64
+	ID            int64
+	Text          string
+	Source        string
+	ParentText    string
+	ParentID      string
+	DocumentTitle string
+	DocumentURI   string
+	Location      string
+	ContentHash   string
+	VecScore      float64
+	BM25Score     float64
+	FinalScore    float64
 }
 
 // Retrieve performs hybrid retrieval: vector KNN + FTS5 BM25, merged via score fusion.
@@ -147,9 +151,9 @@ func (s *Store) Retrieve(queryVec []float32, queryText string, opts RetrieveOpts
 		r.FinalScore = c.finalScore
 
 		err := s.db.QueryRow(
-			`SELECT text, source, COALESCE(parent_text, ''), COALESCE(parent_id, '') FROM chunks WHERE id = ?`,
+			`SELECT text, source, COALESCE(parent_text, ''), COALESCE(parent_id, ''), COALESCE(document_title, ''), COALESCE(document_uri, ''), COALESCE(location, ''), md5 FROM chunks WHERE id = ?`,
 			c.id,
-		).Scan(&r.Text, &r.Source, &r.ParentText, &r.ParentID)
+		).Scan(&r.Text, &r.Source, &r.ParentText, &r.ParentID, &r.DocumentTitle, &r.DocumentURI, &r.Location, &r.ContentHash)
 		if err != nil {
 			// Chunk may have been deleted between query and hydration; skip it.
 			continue

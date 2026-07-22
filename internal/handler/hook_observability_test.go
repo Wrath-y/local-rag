@@ -69,6 +69,9 @@ func TestHookObservability_RecordsInjectedAndStatsRemainSafe(t *testing.T) {
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "SENTINEL_CONTEXT") {
 		t.Fatalf("expected injected context, got %d %q", w.Code, w.Body.String())
 	}
+	if !strings.Contains(w.Body.String(), "Do not invent") || !strings.Contains(w.Body.String(), "[1]") {
+		t.Fatalf("hook did not include grounded citation instructions: %q", w.Body.String())
+	}
 	snapshot := h.hookObservations.Snapshot()
 	if snapshot.Outcomes[observe.HookOutcomeInjected] != 1 {
 		t.Fatalf("expected injected outcome, got %#v", snapshot)

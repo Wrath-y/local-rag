@@ -36,7 +36,9 @@ logs/
 
 # 开发计划
 docs/*
+!docs/diagrams.md
 !docs/retrieval-evaluation.md
+!docs/CITATIONS.md
 openspec
 
 # Go build artifacts

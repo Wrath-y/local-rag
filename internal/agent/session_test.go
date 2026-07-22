@@ -1,6 +1,7 @@
 package agent_test
 
 import (
+	"context"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -8,7 +9,15 @@ import (
 	"database/sql"
 
 	"github.com/Wrath-y/local-rag/internal/agent"
+	"github.com/Wrath-y/local-rag/internal/provider"
 )
+
+type recordingLLM struct{ messages []provider.Message }
+
+func (l *recordingLLM) Complete(_ context.Context, messages []provider.Message) (string, error) {
+	l.messages = append([]provider.Message(nil), messages...)
+	return "Grounded reply [1]", nil
+}
 
 func openTestDB(t *testing.T) *sql.DB {
 	t.Helper()
@@ -139,5 +148,35 @@ func TestDeleteSession(t *testing.T) {
 	// Deleting non-existent session should error.
 	if err := sm.Delete("nonexistent"); err == nil {
 		t.Fatal("expected error when deleting non-existent session")
+	}
+}
+
+func TestChatWithContextKeepsEvidenceOutOfPersistentHistory(t *testing.T) {
+	db := openTestDB(t)
+	sm, err := agent.NewSessionManager(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := sm.Create("{}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	llm := &recordingLLM{}
+	loop := agent.NewAgentLoop(llm, sm, agent.NewToolRegistry())
+	contextText := "Use only supplied citations [1]."
+	if _, err := loop.ChatWithContext(context.Background(), id, "question", contextText); err != nil {
+		t.Fatal(err)
+	}
+	if len(llm.messages) < 2 || llm.messages[0].Content != contextText || llm.messages[1].Content != "question" {
+		t.Fatalf("request context was not sent before history: %#v", llm.messages)
+	}
+	history, err := sm.LoadHistory(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, message := range history {
+		if message["content"] == contextText {
+			t.Fatalf("request-scoped evidence leaked into session history: %#v", history)
+		}
 	}
 }

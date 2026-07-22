@@ -14,6 +14,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Wrath-y/local-rag/internal/chunk"
+	"github.com/Wrath-y/local-rag/internal/citation"
 	"github.com/Wrath-y/local-rag/internal/config"
 	"github.com/Wrath-y/local-rag/internal/observe"
 	"github.com/Wrath-y/local-rag/internal/provider"
@@ -33,7 +34,7 @@ type Deps struct {
 // Run creates and starts the MCP server over stdio transport.
 // Blocks until the client disconnects.
 func Run(ctx context.Context, deps Deps) error {
-	s := &server{deps: deps}
+	s := &server{deps: deps, citations: citation.NewManager(time.Hour)}
 
 	mcpServer := mcp.NewServer(
 		&mcp.Implementation{
@@ -72,14 +73,18 @@ func Run(ctx context.Context, deps Deps) error {
 }
 
 type server struct {
-	deps Deps
+	deps      Deps
+	citations *citation.Manager
 }
 
 // --- Input/Output types ---
 
 type IngestInput struct {
-	Text   string `json:"text" jsonschema:"description=Text content to ingest into the knowledge base"`
-	Source string `json:"source" jsonschema:"description=Source identifier (e.g. filename or URL). Defaults to 'manual'"`
+	Text     string `json:"text" jsonschema:"description=Text content to ingest into the knowledge base"`
+	Source   string `json:"source" jsonschema:"description=Source identifier (e.g. filename or URL). Defaults to 'manual'"`
+	Title    string `json:"title,omitempty" jsonschema:"description=Optional document title for citations"`
+	URI      string `json:"uri,omitempty" jsonschema:"description=Optional original document URI or filesystem path for citations"`
+	Location string `json:"location,omitempty" jsonschema:"description=Optional document location (for example page or section) for citations"`
 }
 
 type IngestOutput struct {
@@ -93,7 +98,9 @@ type RetrieveInput struct {
 }
 
 type RetrieveOutput struct {
-	Chunks []string `json:"chunks"`
+	Chunks        []string            `json:"chunks"`
+	Citations     []citation.Evidence `json:"citations"`
+	EvidenceToken string              `json:"evidence_token"`
 }
 
 type ListSourcesInput struct{}
@@ -149,7 +156,25 @@ func (s *server) handleIngest(ctx context.Context, req *mcp.CallToolRequest, inp
 	// Store
 	added := 0
 	for i, ch := range chunks {
-		id, err := s.deps.Store.InsertChunk(ch.Text, ch.Source, ch.MD5, ch.ParentText, ch.ParentID, embeddings[i])
+		uri := ch.URI
+		if input.URI != "" {
+			uri = input.URI
+		}
+		if uri == "" {
+			uri = ch.Source
+		}
+		title := ch.Title
+		if input.Title != "" {
+			title = input.Title
+		}
+		location := ch.Location
+		if input.Location != "" {
+			location = input.Location
+		}
+		if location == "" {
+			location = fmt.Sprintf("chunk:%d", i+1)
+		}
+		id, err := s.deps.Store.InsertChunkWithProvenance(ch.Text, ch.Source, ch.MD5, ch.ParentText, ch.ParentID, store.Provenance{Title: title, URI: uri, Location: location}, embeddings[i])
 		if err != nil {
 			return errResult(fmt.Sprintf("store error: %v", err)), IngestOutput{}, nil
 		}
@@ -212,7 +237,8 @@ func (s *server) handleRetrieve(ctx context.Context, req *mcp.CallToolRequest, i
 	observe.RetrieveTotal.WithLabelValues(boolStr(len(results) > 0)).Inc()
 
 	if len(results) == 0 {
-		return textResult("No relevant results found."), RetrieveOutput{Chunks: []string{}}, nil
+		manifest := s.citations.Create(nil)
+		return textResult("No relevant results found."), RetrieveOutput{Chunks: []string{}, Citations: []citation.Evidence{}, EvidenceToken: manifest.Token}, nil
 	}
 
 	// Optional rerank
@@ -239,18 +265,10 @@ func (s *server) handleRetrieve(ctx context.Context, req *mcp.CallToolRequest, i
 		}
 	}
 
-	// Format
-	var chunks []string
-	for _, r := range results {
-		displayText := r.Text
-		if r.ParentText != "" {
-			displayText = r.ParentText
-		}
-		chunks = append(chunks, fmt.Sprintf("[来源: %s]\n%s", r.Source, strings.TrimSpace(displayText)))
-	}
-
+	manifest := s.citations.Create(citation.EvidenceFromResults(results))
+	chunks := citation.RenderChunks(manifest.Citations)
 	text := strings.Join(chunks, "\n---\n")
-	return textResult(text), RetrieveOutput{Chunks: chunks}, nil
+	return textResult(text), RetrieveOutput{Chunks: chunks, Citations: manifest.Citations, EvidenceToken: manifest.Token}, nil
 }
 
 func (s *server) handleListSources(ctx context.Context, req *mcp.CallToolRequest, input ListSourcesInput) (*mcp.CallToolResult, ListSourcesOutput, error) {

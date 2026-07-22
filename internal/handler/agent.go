@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/Wrath-y/local-rag/internal/agent"
+	"github.com/Wrath-y/local-rag/internal/citation"
 )
 
 // agentState holds lazily-initialised agent components.
@@ -55,13 +56,26 @@ func (h *Handler) AgentChat(c *gin.Context) {
 		return
 	}
 
-	reply, err := loop.Chat(c.Request.Context(), req.SessionID, req.Message)
+	// Agent requests retrieve fresh evidence rather than relying on a prior
+	// session turn. The rendered instructions are not persisted in history.
+	evidence, retrieveErr := h.doRetrieveEvidence(req.Message, 0)
+	if retrieveErr != nil {
+		evidence = nil
+	}
+	manifest := h.citations.Create(evidence)
+	reply, err := loop.ChatWithContext(c.Request.Context(), req.SessionID, req.Message, citation.RenderAnswerInstructions(manifest.Citations))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"response": reply})
+	validation, _ := h.citations.Validate(manifest.Token, reply)
+	c.JSON(http.StatusOK, gin.H{
+		"response":            reply,
+		"citations":           manifest.Citations,
+		"evidence_token":      manifest.Token,
+		"citation_validation": validation,
+	})
 }
 
 // AgentCreateSession handles POST /agent/session

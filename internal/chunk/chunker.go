@@ -15,6 +15,12 @@ type Chunk struct {
 	MD5        string
 	ParentText string
 	ParentID   string
+	// Citation provenance is optional so existing chunkers and previously
+	// indexed documents remain compatible. Ingest callers may supply it when
+	// the original document provides richer source information.
+	Title    string
+	URI      string
+	Location string
 }
 
 // Chunker splits a document into Chunks.

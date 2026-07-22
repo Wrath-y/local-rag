@@ -4,11 +4,11 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/Wrath-y/local-rag/internal/citation"
 	"github.com/Wrath-y/local-rag/internal/observe"
 )
 
@@ -48,8 +48,8 @@ func (h *Handler) Hook(c *gin.Context) {
 	}()
 
 	// Perform retrieval.
-	chunks, err := h.doRetrieve(req.Prompt, 0)
-	if err != nil || len(chunks) == 0 {
+	evidence, err := h.doRetrieveEvidence(req.Prompt, 0)
+	if err != nil || len(evidence) == 0 {
 		outcome = observe.HookOutcomeNoResults
 		if err != nil {
 			reason = observe.HookReasonRetrievalError
@@ -58,12 +58,15 @@ func (h *Handler) Hook(c *gin.Context) {
 		return
 	}
 
-	ctx := "[RAG 自动检索结果]\n" +
-		strings.Join(chunks, "\n---\n") +
-		"\n\n请参考以上内容回答用户问题。若无关则忽略。"
+	manifest := h.citations.Create(evidence)
+	ctx := citation.RenderAnswerInstructions(manifest.Citations)
 
 	outcome = observe.HookOutcomeInjected
-	c.JSON(http.StatusOK, gin.H{"additional_context": ctx})
+	c.JSON(http.StatusOK, gin.H{
+		"additional_context": ctx,
+		"citations":          manifest.Citations,
+		"evidence_token":     manifest.Token,
+	})
 }
 
 type hookOutcomeReport struct {

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -11,8 +12,11 @@ import (
 )
 
 type ingestRequest struct {
-	Text   string `json:"text" binding:"required"`
-	Source string `json:"source"`
+	Text     string `json:"text" binding:"required"`
+	Source   string `json:"source"`
+	Title    string `json:"title"`
+	URI      string `json:"uri"`
+	Location string `json:"location"`
 }
 
 // Ingest accepts text, chunks it, embeds each chunk, and stores it.
@@ -62,10 +66,27 @@ func (h *Handler) Ingest(c *gin.Context) {
 	added := 0
 	err = h.deps.Stores.WithWriteStore(func(st *store.Store) error {
 		for i, ch := range chunks {
-			id, err := st.InsertChunk(
-				ch.Text, ch.Source, ch.MD5,
-				ch.ParentText, ch.ParentID,
-				embeddings[i],
+			uri := req.URI
+			if uri == "" {
+				uri = ch.URI
+			}
+			if uri == "" {
+				uri = ch.Source
+			}
+			title := req.Title
+			if title == "" {
+				title = ch.Title
+			}
+			location := req.Location
+			if location == "" {
+				location = ch.Location
+			}
+			if location == "" {
+				location = fmt.Sprintf("chunk:%d", i+1)
+			}
+			id, err := st.InsertChunkWithProvenance(
+				ch.Text, ch.Source, ch.MD5, ch.ParentText, ch.ParentID,
+				store.Provenance{Title: title, URI: uri, Location: location}, embeddings[i],
 			)
 			if err != nil {
 				return err

@@ -54,6 +54,9 @@ CREATE TABLE IF NOT EXISTS chunks (
     md5        TEXT    NOT NULL,
     parent_text TEXT,
     parent_id  TEXT,
+    document_title TEXT,
+    document_uri TEXT,
+    location TEXT,
     created_at TEXT    NOT NULL
 );
 
@@ -82,8 +85,54 @@ END;
 		db.Close()
 		return nil, fmt.Errorf("store.New: create schema: %w", err)
 	}
+	if err := ensureChunkCitationColumns(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("store.New: migrate citation columns: %w", err)
+	}
 
 	return &Store{db: db, dims: dims}, nil
+}
+
+// ensureChunkCitationColumns upgrades databases created before provenance was
+// stored. These columns deliberately remain nullable for legacy chunks.
+func ensureChunkCitationColumns(db *sql.DB) error {
+	columns := []struct {
+		name string
+		ddl  string
+	}{
+		{"document_title", "ALTER TABLE chunks ADD COLUMN document_title TEXT"},
+		{"document_uri", "ALTER TABLE chunks ADD COLUMN document_uri TEXT"},
+		{"location", "ALTER TABLE chunks ADD COLUMN location TEXT"},
+	}
+	for _, column := range columns {
+		var exists bool
+		rows, err := db.Query("PRAGMA table_info(chunks)")
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var cid int
+			var name, typ string
+			var notNull, pk int
+			var defaultValue interface{}
+			if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
+				rows.Close()
+				return err
+			}
+			if name == column.name {
+				exists = true
+			}
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+		if !exists {
+			if _, err := db.Exec(column.ddl); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // Close releases the database connection.

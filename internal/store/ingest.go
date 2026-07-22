@@ -9,9 +9,23 @@ import (
 	"time"
 )
 
+// Provenance contains optional document-level citation metadata. URI is the
+// original URI or filesystem path; Location identifies a position in it.
+type Provenance struct {
+	Title    string
+	URI      string
+	Location string
+}
+
 // InsertChunk inserts a chunk with its embedding vector.
 // Returns (id, nil) on success, (0, nil) if md5 duplicate (skip), or (0, err) on failure.
 func (s *Store) InsertChunk(text, source, md5, parentText, parentID string, embedding []float32) (int64, error) {
+	return s.InsertChunkWithProvenance(text, source, md5, parentText, parentID, Provenance{}, embedding)
+}
+
+// InsertChunkWithProvenance inserts a chunk and its optional citation
+// provenance. InsertChunk remains available for callers that do not have it.
+func (s *Store) InsertChunkWithProvenance(text, source, md5, parentText, parentID string, provenance Provenance, embedding []float32) (int64, error) {
 	// 1. Check if md5 already exists
 	var exists int
 	err := s.db.QueryRow("SELECT 1 FROM chunks WHERE md5 = ?", md5).Scan(&exists)
@@ -31,8 +45,8 @@ func (s *Store) InsertChunk(text, source, md5, parentText, parentID string, embe
 
 	// 3. Insert into chunks table
 	res, err := tx.Exec(
-		"INSERT INTO chunks (text, source, md5, parent_text, parent_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-		text, source, md5, parentText, parentID, time.Now().UTC().Format(time.RFC3339),
+		"INSERT INTO chunks (text, source, md5, parent_text, parent_id, document_title, document_uri, location, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		text, source, md5, parentText, parentID, provenance.Title, provenance.URI, provenance.Location, time.Now().UTC().Format(time.RFC3339),
 	)
 	if err != nil {
 		return 0, fmt.Errorf("insert chunk: %w", err)

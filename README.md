@@ -93,6 +93,10 @@ All operations are done inside the Claude Code chat — type `/rag` to trigger a
 /rag-retrieve How to handle Redis cache penetration?
 ```
 
+Retrieved chunks now include request-scoped `[n]` citations. See the
+[citation contract](CITATIONS.md) for structured HTTP/MCP fields,
+validation, and uncertainty behavior.
+
 ### ⚡ Auto-Retrieval Mode
 
 When enabled, every prompt automatically retrieves from the knowledge base and injects results — no manual trigger needed:

@@ -91,6 +91,11 @@ RAG server started (PID: xxxxx) at http://127.0.0.1:8765
 /rag-retrieve Redis 缓存穿透怎么处理？
 ```
 
+检索结果会包含本次请求范围内的 `[n]` 引用标记。HTTP/MCP 会额外返回结构化
+`citations` 与 `evidence_token`；可将最终回答提交至
+`POST /citations/validate`，校验有效、伪造或缺失的引用。完整字段、时效及不确定性
+处理方式见 [引用契约](CITATIONS.md)。
+
 ### ⚡ 自动检索模式
 
 开启后，每次提交 prompt 自动检索知识库并注入结果，无需手动触发：

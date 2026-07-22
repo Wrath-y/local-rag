@@ -1,7 +1,10 @@
 package handler
 
 import (
+	"time"
+
 	"github.com/Wrath-y/local-rag/internal/chunk"
+	"github.com/Wrath-y/local-rag/internal/citation"
 	"github.com/Wrath-y/local-rag/internal/config"
 	"github.com/Wrath-y/local-rag/internal/observe"
 	"github.com/Wrath-y/local-rag/internal/provider"
@@ -25,6 +28,7 @@ type Handler struct {
 	deps             Deps
 	indexRebuild     *indexRebuildCoordinator
 	hookObservations *observe.HookObservations
+	citations        *citation.Manager
 
 	// runtime toggleable state
 	rerankEnabled        bool
@@ -61,5 +65,6 @@ func New(deps Deps) *Handler {
 	}
 	h.indexRebuild = newIndexRebuildCoordinator(deps.Stores, deps.Embedder, dims)
 	h.hookObservations = observe.NewHookObservations()
+	h.citations = citation.NewManager(time.Hour)
 	return h
 }
