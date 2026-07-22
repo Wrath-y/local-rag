@@ -14,8 +14,8 @@ import (
 )
 
 type retrieveRequest struct {
-	Text               string `json:"text" binding:"required"`
-	ContextTokensUsed  int    `json:"context_tokens_used"`
+	Text              string `json:"text" binding:"required"`
+	ContextTokensUsed int    `json:"context_tokens_used"`
 }
 
 // Retrieve performs hybrid vector+BM25 search and returns formatted chunks.
@@ -89,8 +89,13 @@ func (h *Handler) doRetrieve(text string, contextTokensUsed int) ([]string, erro
 	}
 	queryVec := vecs[0]
 
-	// Hybrid retrieval.
-	results, err := h.deps.Store.Retrieve(queryVec, text, opts)
+	// Hybrid retrieval under the lifecycle read lock.
+	var results []store.RetrieveResult
+	err = h.deps.Stores.WithStore(func(st *store.Store) error {
+		var retrieveErr error
+		results, retrieveErr = st.Retrieve(queryVec, text, opts)
+		return retrieveErr
+	})
 	if err != nil {
 		return nil, fmt.Errorf("retrieve: %w", err)
 	}

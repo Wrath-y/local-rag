@@ -118,6 +118,29 @@ Re-sync after document changes — one command replaces "delete + re-ingest":
 /rag-reset                         # Clear entire knowledge base
 ```
 
+### 💾 Export and Import
+
+Export creates a versioned ZIP package containing a consistent SQLite snapshot (`rag.db`) and `manifest.json`. The manifest records the package/schema versions, creation timestamp, chunk count, embedding summary, file size, and SHA-256 checksum.
+
+```bash
+/rag-export ~/rag-backup.zip
+/rag-import ~/rag-backup.zip
+```
+
+Import requires an explicit confirmation. Before replacement, the server validates ZIP structure, manifest versions, file size/checksum, and SQLite schema; it then snapshots the active database, atomically replaces it, reloads it, and runs an integrity check. Failure during replacement, reload, or integrity validation triggers an automatic rollback.
+
+**Compatibility and limits:** only backups exported by this version are supported. Legacy one-file ZIP exports without `manifest.json` are rejected; re-export the source knowledge base with the current server first. Format v1 accepts exactly `manifest.json` and `rag.db`; archive input is limited to 256 MiB compressed, 512 MiB extracted, and two entries.
+
+HTTP import accepts multipart input with a mandatory confirmation field:
+
+```bash
+curl -s -X POST http://127.0.0.1:8765/import \
+  -F 'confirm=true' \
+  -F 'file=@~/rag-backup.zip'
+```
+
+Responses include a `stage` (`validate`, `snapshot`, `replace`, `reload`, `integrity`, or `complete`) and `rolled_back` state. Restore metrics are exposed as `rag_restore_total` and `rag_restore_duration_seconds`; logs never include document text.
+
 ### 🎯 Rerank
 
 Enable cross-encoder reranking for higher relevance precision:

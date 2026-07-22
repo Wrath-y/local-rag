@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/Wrath-y/local-rag/internal/observe"
+	"github.com/Wrath-y/local-rag/internal/store"
 )
 
 type ingestRequest struct {
@@ -57,21 +58,27 @@ func (h *Handler) Ingest(c *gin.Context) {
 		return
 	}
 
-	// 4. Store each chunk.
+	// 4. Store each chunk under the lifecycle read lock.
 	added := 0
-	for i, ch := range chunks {
-		id, err := h.deps.Store.InsertChunk(
-			ch.Text, ch.Source, ch.MD5,
-			ch.ParentText, ch.ParentID,
-			embeddings[i],
-		)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "store failed: " + err.Error()})
-			return
+	err = h.deps.Stores.WithStore(func(st *store.Store) error {
+		for i, ch := range chunks {
+			id, err := st.InsertChunk(
+				ch.Text, ch.Source, ch.MD5,
+				ch.ParentText, ch.ParentID,
+				embeddings[i],
+			)
+			if err != nil {
+				return err
+			}
+			if id != 0 {
+				added++
+			}
 		}
-		if id != 0 {
-			added++
-		}
+		return nil
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "store failed: " + err.Error()})
+		return
 	}
 
 	// 5. Update metrics.

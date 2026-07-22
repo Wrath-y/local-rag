@@ -25,7 +25,7 @@ func (h *Handler) BackupRun(c *gin.Context) {
 	zipName := fmt.Sprintf("rag-%s.zip", time.Now().Format("150405"))
 	zipPath := filepath.Join(backupDir, zipName)
 
-	data, err := createDBZip(dbPath)
+	data, err := createDBZip(dbPath, h.backupPackageMetadata())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -117,7 +117,7 @@ type restoreRequest struct {
 	Confirm bool   `json:"confirm"`
 }
 
-// BackupRestore replaces the database with a backup zip file.
+// BackupRestore restores a confirmed project backup through RestoreService.
 func (h *Handler) BackupRestore(c *gin.Context) {
 	var req restoreRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -128,49 +128,18 @@ func (h *Handler) BackupRestore(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "confirm must be true"})
 		return
 	}
-
-	// Validate the file exists.
-	if _, err := os.Stat(req.File); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "backup file not found: " + req.File})
+	if info, err := os.Stat(req.File); err != nil || !info.Mode().IsRegular() {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "backup file not found or invalid"})
 		return
 	}
-
-	dbPath := h.deps.Config.Storage.DBPath
-
-	// Create a pre-restore backup.
-	preRestore := filepath.Join(
-		filepath.Dir(dbPath), "..", "backups",
-		fmt.Sprintf("pre-restore-%d.zip", time.Now().UnixMilli()),
-	)
-	if err := os.MkdirAll(filepath.Dir(preRestore), 0o755); err == nil {
-		if data, err := createDBZip(dbPath); err == nil {
-			_ = os.WriteFile(preRestore, data, 0o644)
+	result, err := h.deps.Restore.Restore(req.File)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if result.Stage == RestoreStageValidate {
+			status = http.StatusBadRequest
 		}
-	}
-
-	// Read the backup zip and extract the db file.
-	zipBytes, err := os.ReadFile(req.File)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "read backup: " + err.Error()})
+		c.JSON(status, gin.H{"status": "failed", "stage": result.Stage, "rolled_back": result.RolledBack, "error": err.Error()})
 		return
 	}
-
-	dbBytes, err := extractFirstFileFromZip(zipBytes)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "extract backup: " + err.Error()})
-		return
-	}
-
-	// Atomically replace the db file.
-	tmpPath := dbPath + ".restore.tmp"
-	if err := os.WriteFile(tmpPath, dbBytes, 0o644); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "write tmp: " + err.Error()})
-		return
-	}
-	if err := os.Rename(tmpPath, dbPath); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "replace db: " + err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"status": "ok", "pre_restore_backup": preRestore})
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "stage": result.Stage, "snapshot_path": result.SnapshotPath})
 }

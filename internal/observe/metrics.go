@@ -72,6 +72,22 @@ var (
 			Help: "Last backup timestamp",
 		},
 	)
+
+	RestoreTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "rag_restore_total",
+			Help: "Total restore attempts by result",
+		},
+		[]string{"result"},
+	)
+
+	RestoreLatency = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "rag_restore_duration_seconds",
+			Help:    "Restore duration",
+			Buckets: prometheus.DefBuckets,
+		},
+	)
 )
 
 func InitMetrics() {
@@ -85,6 +101,8 @@ func InitMetrics() {
 		QueryRewriteLatency,
 		BackupTotal,
 		LastBackupTimestamp,
+		RestoreTotal,
+		RestoreLatency,
 	)
 }
 

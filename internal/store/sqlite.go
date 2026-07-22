@@ -95,3 +95,16 @@ func (s *Store) Close() error {
 func (s *Store) DB() *sql.DB {
 	return s.db
 }
+
+// Snapshot creates a consistent SQLite snapshot at destination.
+func (s *Store) Snapshot(destination string) error {
+	if _, err := os.Stat(destination); err == nil {
+		return fmt.Errorf("snapshot destination already exists: %s", destination)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("snapshot stat destination: %w", err)
+	}
+	if _, err := s.db.Exec("VACUUM INTO ?", destination); err != nil {
+		return fmt.Errorf("snapshot database: %w", err)
+	}
+	return nil
+}

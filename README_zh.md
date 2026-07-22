@@ -118,6 +118,29 @@ RAG server started (PID: xxxxx) at http://127.0.0.1:8765
 /rag-reset                         # 清空全部知识库
 ```
 
+### 💾 导出与导入
+
+导出会生成版本化 ZIP 包，内含一致性 SQLite 快照（`rag.db`）与 `manifest.json`。manifest 记录包/Schema 版本、创建时间、chunk 数、embedding 配置摘要、文件大小及 SHA-256 校验和。
+
+```bash
+/rag-export ~/rag-backup.zip
+/rag-import ~/rag-backup.zip
+```
+
+导入必须显式确认。服务会先校验 ZIP 结构、manifest 版本、文件大小/校验和与 SQLite Schema；随后快照当前数据库、原子替换、重新加载并执行完整性检查。替换、重载或完整性校验失败时会自动回滚。
+
+**兼容性与限制：**仅支持由当前版本导出的备份。旧版单文件 ZIP 因缺少 `manifest.json` 会被拒绝；请先使用当前服务重新导出源知识库。v1 格式只允许 `manifest.json` 和 `rag.db` 两个条目；压缩包最大 256 MiB，解压后最大 512 MiB，共两个条目。
+
+HTTP 导入使用 multipart，且必须提供确认字段：
+
+```bash
+curl -s -X POST http://127.0.0.1:8765/import \
+  -F 'confirm=true' \
+  -F 'file=@~/rag-backup.zip'
+```
+
+响应包括阶段 `stage`（`validate`、`snapshot`、`replace`、`reload`、`integrity` 或 `complete`）和 `rolled_back` 状态。恢复指标：`rag_restore_total`、`rag_restore_duration_seconds`；日志不会记录文档正文。
+
 ### 🎯 Rerank 精排
 
 开启后，检索结果经 cross-encoder 二次排序，提升相关性精度：

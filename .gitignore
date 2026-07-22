@@ -5,6 +5,7 @@
 .claude/commands/*
 !.claude/commands/rag*.md
 .idea
+.codex
 MEMORY.md
 
 # 向量库数据（本地生成，不上传）

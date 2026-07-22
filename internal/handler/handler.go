@@ -10,10 +10,12 @@ import (
 // Deps holds all external dependencies for the handler layer.
 type Deps struct {
 	Config   *config.Config
-	Store    *store.Store
+	Store    *store.Store // Deprecated: New wraps this in Stores when needed.
+	Stores   *StoreLifecycle
+	Restore  *RestoreService
 	Embedder provider.EmbedProvider
 	Reranker provider.RerankProvider // may be nil if disabled
-	LLM      provider.LLMProvider   // may be nil
+	LLM      provider.LLMProvider    // may be nil
 	Chunker  chunk.Chunker
 }
 
@@ -32,6 +34,12 @@ type Handler struct {
 
 // New creates a Handler with the given dependencies.
 func New(deps Deps) *Handler {
+	if deps.Stores == nil && deps.Store != nil {
+		deps.Stores = NewStoreLifecycle(deps.Store)
+	}
+	if deps.Restore == nil && deps.Stores != nil && deps.Config != nil {
+		deps.Restore = NewRestoreService(deps.Stores, deps.Config.Storage.DBPath, deps.Config.Embedding.Dims)
+	}
 	strategy := ""
 	if deps.Config != nil {
 		strategy = deps.Config.Chunk.Strategy

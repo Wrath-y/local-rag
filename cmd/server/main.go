@@ -98,7 +98,8 @@ func main() {
 		slog.Error("store init failed", "err", err)
 		os.Exit(1)
 	}
-	defer st.Close()
+	stores := handler.NewStoreLifecycle(st)
+	defer stores.Close()
 
 	// Init chunker.
 	chunker := chunk.NewChunker(cfg.Chunk, embedder, llm)
@@ -106,7 +107,7 @@ func main() {
 	// Build handler.
 	h := handler.New(handler.Deps{
 		Config:   cfg,
-		Store:    st,
+		Stores:   stores,
 		Embedder: embedder,
 		Reranker: reranker,
 		LLM:      llm,
@@ -168,7 +169,7 @@ func main() {
 		<-sigCh
 		slog.Info("shutting down")
 		sc.Stop()
-		st.Close()
+		stores.Close()
 		os.Exit(0)
 	}()
 
