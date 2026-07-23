@@ -66,6 +66,19 @@ sync:
   report_retention_hours: 720 # 报告默认保留 30 天
   staging_retention_hours: 24 # 失败/完成任务的暂存数据保留 24 小时
 
+# 生产文档连接器（请求可以降低但不能提高这些服务端上限）
+connectors:
+  allowed_local_paths: ["."]
+  allowed_url_schemes: ["http", "https"]
+  max_source_bytes: 20971520
+  max_documents: 500
+  max_extracted_bytes: 52428800
+  max_duration_seconds: 60
+  max_git_files: 2000
+  max_git_file_bytes: 2097152
+  max_git_total_bytes: 52428800
+  exclusions: [".env", "node_modules/", "vendor/"]
+
 log:
   lang: "en"   # 日志语言：zh（中文）或 en（English）
 

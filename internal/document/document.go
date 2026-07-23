@@ -3,11 +3,13 @@ package document
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const (
@@ -24,8 +26,32 @@ const (
 	InputLocalFile      InputKind = "local_file"
 	InputFeishuDocument InputKind = "feishu_document"
 	InputPDF            InputKind = "pdf"
+	InputTXT            InputKind = "txt"
+	InputJSON           InputKind = "json"
+	InputDOCX           InputKind = "docx"
 	InputWebURL         InputKind = "web_url"
+	InputGit            InputKind = "git"
 )
+
+// Limits are optional per-request ceilings. Zero means use the server limit;
+// a request is never allowed to increase a configured ceiling.
+type Limits struct {
+	SourceBytes    int64 `json:"source_bytes,omitempty"`
+	Documents      int   `json:"documents,omitempty"`
+	ExtractedBytes int64 `json:"extracted_bytes,omitempty"`
+	DurationSecs   int   `json:"duration_seconds,omitempty"`
+	GitFiles       int   `json:"git_files,omitempty"`
+	GitFileBytes   int64 `json:"git_file_bytes,omitempty"`
+	GitTotalBytes  int64 `json:"git_total_bytes,omitempty"`
+}
+
+// Options are the server-owned policy passed to built-in loaders.
+type Options struct {
+	AllowedLocalPaths []string
+	AllowedURLSchemes []string
+	Limits            Limits
+	Exclusions        []string
+}
 
 // Request is the normalized input passed to a document loader. Source is an
 // optional caller-selected identity override.
@@ -35,6 +61,9 @@ type Request struct {
 	Path       string
 	URL        string
 	Source     string
+	Ref        string
+	Exclusions []string
+	Limits     Limits
 	Provenance map[string]string
 }
 
@@ -52,6 +81,10 @@ type Document struct {
 	Metadata Metadata
 }
 
+// LoadedDocument is the production connector name for the normalized document
+// boundary. Document remains an alias for backwards-compatible callers.
+type LoadedDocument = Document
+
 // Result is the aggregate outcome of loading and ingesting a request.
 type Result struct {
 	Documents   int
@@ -66,6 +99,9 @@ const (
 	InvalidInput     ErrorCategory = "invalid_input"
 	UnavailableInput ErrorCategory = "unavailable_input"
 	LoadFailed       ErrorCategory = "load_failed"
+	PolicyRejected   ErrorCategory = "policy_rejected"
+	ExtractionFailed ErrorCategory = "extraction_failed"
+	LimitExceeded    ErrorCategory = "limit_exceeded"
 	IngestFailed     ErrorCategory = "ingest_failed"
 )
 
@@ -104,6 +140,12 @@ func PublicMessage(err error) string {
 		return "Provide direct text, a local file path, or a supported Feishu document link."
 	case category == InvalidInput:
 		return "Provide non-empty content and a valid source identifier."
+	case category == PolicyRejected:
+		return "The requested source is not allowed by connector policy."
+	case category == ExtractionFailed:
+		return "Text could not be extracted from the requested source."
+	case category == LimitExceeded:
+		return "The requested source exceeds a configured ingestion limit."
 	case category == UnavailableInput:
 		return "The requested input is unavailable. Check that it exists and that you have access."
 	case category == LoadFailed:
@@ -128,6 +170,9 @@ func NewRegistry(loaders ...DocumentLoader) *Registry {
 }
 
 func (r *Registry) Load(ctx context.Context, request Request) ([]Document, error) {
+	if err := validateRequest(request); err != nil {
+		return nil, err
+	}
 	for _, loader := range r.loaders {
 		if loader != nil && loader.Supports(request) {
 			return loader.Load(ctx, request)
@@ -184,11 +229,56 @@ func validateProvenance(provenance map[string]string) error {
 		return NewError(InvalidInput, "Document provenance contains too many attributes.", nil)
 	}
 	for key, value := range provenance {
-		if strings.TrimSpace(key) == "" || len(key) > maxProvenanceLength || len(value) > maxProvenanceLength {
+		if !allowedProvenanceKey(key) || len(value) > maxProvenanceLength || containsSensitiveValue(value) {
 			return NewError(InvalidInput, "Document provenance contains an invalid attribute.", nil)
 		}
 	}
 	return nil
+}
+
+func allowedProvenanceKey(key string) bool {
+	switch key {
+	case "title", "uri", "location", "source_uri", "loader", "source_kind", "content_type", "encoding", "json_path", "repository", "requested_ref", "resolved_revision", "repository_path", "partial", "limit_cause":
+		return true
+	default:
+		return false
+	}
+}
+
+func containsSensitiveValue(value string) bool {
+	lower := strings.ToLower(value)
+	return strings.Contains(lower, "@") && (strings.Contains(lower, "://") || strings.Contains(lower, "password")) || strings.Contains(lower, "authorization:") || strings.Contains(lower, "private key")
+}
+
+func validateRequest(request Request) error {
+	populated := 0
+	for _, value := range []string{request.Text, request.Path, request.URL} {
+		if strings.TrimSpace(value) != "" {
+			populated++
+		}
+	}
+	if populated > 1 && request.Kind == InputAuto {
+		return NewError(InvalidInput, "Specify one source input or an explicit source kind.", nil)
+	}
+	if request.Kind == InputGit && strings.TrimSpace(request.Path) != "" && strings.TrimSpace(request.URL) != "" {
+		return NewError(InvalidInput, "Specify either a local Git path or a remote Git URL.", nil)
+	}
+	return nil
+}
+
+// MetadataJSON serializes only validated provenance for durable storage.
+func MetadataJSON(metadata Metadata) string {
+	values := map[string]string{"schema_version": "1", "source_kind": string(metadata.Kind)}
+	for key, value := range metadata.Provenance {
+		if allowedProvenanceKey(key) && !containsSensitiveValue(value) {
+			values[key] = value
+		}
+	}
+	encoded, err := json.Marshal(values)
+	if err != nil {
+		return "{}"
+	}
+	return string(encoded)
 }
 
 // Pipeline receives documents only after the complete loader result validates.
@@ -212,6 +302,11 @@ type Service struct {
 func (s Service) Ingest(ctx context.Context, request Request) (Result, error) {
 	if s.Registry == nil || s.Pipeline == nil {
 		return Result{}, NewError(IngestFailed, "Ingestion is not configured.", nil)
+	}
+	if request.Limits.DurationSecs > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(request.Limits.DurationSecs)*time.Second)
+		defer cancel()
 	}
 	documents, err := s.Registry.Load(ctx, request)
 	if err != nil {
@@ -361,5 +456,15 @@ func isFeishuURL(value string) bool {
 // BuiltinRegistry exposes exactly the currently supported adapters in their
 // documented precedence order.
 func BuiltinRegistry(resolver FeishuResolver) *Registry {
+	// Retain the legacy registry contract for embedders that only opted into
+	// the original document surface. Production construction uses the explicit
+	// options variant below.
 	return NewRegistry(FeishuLoader{Resolver: resolver}, WebLoader{}, PDFLoader{}, LocalFileLoader{}, DirectTextLoader{})
+}
+
+// BuiltinRegistryWithOptions supplies the production connector set while
+// preserving BuiltinRegistry for callers compiled against earlier versions.
+func BuiltinRegistryWithOptions(resolver FeishuResolver, options Options) *Registry {
+	CleanupStaleGitWorkspaces()
+	return NewRegistry(GitLoader{Options: options}, FeishuLoader{Resolver: resolver}, WebLoader{Options: options}, PDFLoader{Options: options}, DOCXLoader{Options: options}, JSONLoader{Options: options}, TXTLoader{Options: options}, LocalFileLoader{}, DirectTextLoader{})
 }

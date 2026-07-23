@@ -67,6 +67,20 @@ sync:
   report_retention_hours: 720
   staging_retention_hours: 24
 
+# Production document connectors are opt-in through /ingest or rag_ingest.
+# Requests may reduce these limits but cannot raise them.
+connectors:
+  allowed_local_paths: ["."]
+  allowed_url_schemes: ["http", "https"]
+  max_source_bytes: 20971520
+  max_documents: 500
+  max_extracted_bytes: 52428800
+  max_duration_seconds: 60
+  max_git_files: 2000
+  max_git_file_bytes: 2097152
+  max_git_total_bytes: 52428800
+  exclusions: [".env", "node_modules/", "vendor/"]
+
 log:
   lang: "en"   # Log language: zh (Chinese) or en (English)
 

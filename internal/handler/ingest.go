@@ -14,13 +14,17 @@ import (
 )
 
 type ingestRequest struct {
-	Text     string `json:"text"`
-	Source   string `json:"source"`
-	Path     string `json:"path"`
-	URL      string `json:"url"`
-	Title    string `json:"title"`
-	URI      string `json:"uri"`
-	Location string `json:"location"`
+	Text       string             `json:"text"`
+	Source     string             `json:"source"`
+	Path       string             `json:"path"`
+	URL        string             `json:"url"`
+	Title      string             `json:"title"`
+	URI        string             `json:"uri"`
+	Location   string             `json:"location"`
+	Kind       document.InputKind `json:"kind"`
+	Ref        string             `json:"ref"`
+	Exclusions []string           `json:"exclusions"`
+	Limits     document.Limits    `json:"limits"`
 }
 
 // Ingest accepts legacy text/source requests as well as supported loader
@@ -33,6 +37,9 @@ func (h *Handler) Ingest(c *gin.Context) {
 	}
 	result, err := h.ingestService.Ingest(c.Request.Context(), req.documentRequest())
 	if err != nil {
+		if category, ok := document.CategoryOf(err); ok {
+			observe.IngestTotal.WithLabelValues(string(category)).Inc()
+		}
 		writeIngestError(c, err)
 		return
 	}
@@ -48,13 +55,13 @@ func (h *Handler) Ingest(c *gin.Context) {
 
 func (req ingestRequest) documentRequest() document.Request {
 	request := document.Request{
-		Text: req.Text, Path: req.Path, URL: req.URL, Source: req.Source,
+		Kind: req.Kind, Text: req.Text, Path: req.Path, URL: req.URL, Source: req.Source, Ref: req.Ref, Exclusions: req.Exclusions, Limits: req.Limits,
 		Provenance: map[string]string{"title": req.Title, "uri": req.URI, "location": req.Location},
 	}
 	// Existing text/source callers always select the direct-text loader. Path
 	// and URL are opt-in fields, so literal text that resembles a URL remains
 	// compatible with the legacy endpoint.
-	if req.Text != "" || (req.Path == "" && req.URL == "") {
+	if request.Kind == document.InputAuto && (req.Text != "" || (req.Path == "" && req.URL == "")) {
 		request.Kind = document.InputText
 	}
 	return request
@@ -104,7 +111,7 @@ func (h *Handler) ingestDocument(ctx context.Context, documentValue document.Doc
 			}
 			id, err := st.InsertChunkWithProvenance(
 				ch.Text, ch.Source, ch.MD5, ch.ParentText, ch.ParentID,
-				store.Provenance{Title: title, URI: uri, Location: location}, embeddings[i],
+				store.Provenance{Title: title, URI: uri, Location: location, ConnectorMetadata: document.MetadataJSON(documentValue.Metadata)}, embeddings[i],
 			)
 			if err != nil {
 				return err
@@ -128,8 +135,12 @@ func writeIngestError(c *gin.Context, err error) {
 	}
 	status := http.StatusInternalServerError
 	switch category {
-	case document.UnsupportedInput, document.InvalidInput:
+	case document.UnsupportedInput, document.InvalidInput, document.PolicyRejected:
 		status = http.StatusBadRequest
+	case document.ExtractionFailed:
+		status = http.StatusUnprocessableEntity
+	case document.LimitExceeded:
+		status = http.StatusRequestEntityTooLarge
 	case document.UnavailableInput:
 		status = http.StatusServiceUnavailable
 	case document.LoadFailed:

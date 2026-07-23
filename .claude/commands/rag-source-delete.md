@@ -22,7 +22,7 @@ curl -s http://127.0.0.1:8765/sources
 
 - 用户选择「确认删除」→ 执行删除：
   ```bash
-  curl -s -X DELETE "http://127.0.0.1:8765/source?name=$ARGUMENTS"
+  curl -s -X DELETE "http://127.0.0.1:8765/source?source=$ARGUMENTS"
   ```
   告知用户删除了多少个 chunk。
 

@@ -1,6 +1,9 @@
 package store
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // SourceInfo holds a source name and its chunk count.
 type SourceInfo struct {
@@ -40,7 +43,11 @@ func (s *Store) DeleteSource(source string) (int, error) {
 	defer tx.Rollback()
 
 	// 1. Collect IDs for the source.
-	rows, err := tx.Query(`SELECT id FROM chunks WHERE source = ?`, source)
+	// Git documents retain a repository-relative suffix (`identity#path`) for
+	// traceability. Deleting the canonical identity therefore removes both
+	// legacy exact-source rows and its connector-derived descendants.
+	prefix := escapeLike(source) + "#%"
+	rows, err := tx.Query(`SELECT id FROM chunks WHERE source = ? OR source LIKE ? ESCAPE '\'`, source, prefix)
 	if err != nil {
 		return 0, fmt.Errorf("DeleteSource select ids: %w", err)
 	}
@@ -66,7 +73,7 @@ func (s *Store) DeleteSource(source string) (int, error) {
 	}
 
 	// 3. Delete chunks rows (triggers chunks_ad → FTS5 cleanup).
-	res, err := tx.Exec(`DELETE FROM chunks WHERE source = ?`, source)
+	res, err := tx.Exec(`DELETE FROM chunks WHERE source = ? OR source LIKE ? ESCAPE '\'`, source, prefix)
 	if err != nil {
 		return 0, fmt.Errorf("DeleteSource delete chunks: %w", err)
 	}
@@ -83,6 +90,10 @@ func (s *Store) DeleteSource(source string) (int, error) {
 	}
 
 	return int(n), tx.Commit()
+}
+
+func escapeLike(value string) string {
+	return strings.NewReplacer("\\", "\\\\", "%", "\\%", "_", "\\_").Replace(value)
 }
 
 // Reset removes ALL data: chunks, vec_chunks, and the FTS5 index.

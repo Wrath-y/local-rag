@@ -89,6 +89,27 @@ All operations are done inside the Claude Code chat — type `/rag` to trigger a
 | Feishu link | The URL |
 | Local file | Filename (e.g., `manual.txt`) |
 
+### Production connectors
+
+`POST /ingest` and MCP `rag_ingest` also accept an explicit `kind` and one
+source field: `txt`, `json`, `pdf`, `docx`, `web_url`, or `git`. Use `path`
+for local documents/repositories and `url` for a web page or HTTPS/SSH Git
+remote. Git accepts optional `ref`, additive `exclusions`, and lower-only
+`limits`.
+
+```json
+{"kind":"git","path":"/approved/project","ref":"v1.2.0","exclusions":["generated/"]}
+```
+
+TXT is normalized as UTF-8 (with BOM/line-ending normalization); JSON is
+rendered deterministically; DOCX/PDF must contain extractable text. Web loads
+fetch one page only, do not run scripts or crawl, reject credentials and
+private destinations, and use bounded redirects/response sizes. Git supports
+approved local paths and credential-free HTTPS/SSH remotes only; it disables
+submodules and LFS, uses the host Git credential helper/SSH agent, and removes
+remote clone workspaces on completion. Source metadata records the redacted
+canonical identity, loader, and Git path/ref/revision where applicable.
+
 ### 🔍 Retrieve from Knowledge Base
 
 ```bash
@@ -239,6 +260,14 @@ retrieve:
 # Storage
 storage:
   db_path: "data/rag.db"
+
+# Connector paths are allowlisted; limits are server ceilings.
+connectors:
+  allowed_local_paths: ["."]
+  max_source_bytes: 20971520
+  max_documents: 500
+  max_duration_seconds: 60
+  max_git_files: 2000
 ```
 
 ### Using OpenRouter

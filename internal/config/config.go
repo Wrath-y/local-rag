@@ -20,6 +20,7 @@ type Config struct {
 	Storage      StorageConfig      `yaml:"storage"`
 	Sidecar      SidecarConfig      `yaml:"sidecar"`
 	Sync         SyncConfig         `yaml:"sync"`
+	Connectors   ConnectorConfig    `yaml:"connectors"`
 	Log          LogConfig          `yaml:"log"`
 }
 
@@ -167,6 +168,21 @@ type SyncConfig struct {
 	StagingRetentionHours int  `yaml:"staging_retention_hours"`
 }
 
+// ConnectorConfig contains conservative ceilings for document and repository
+// loaders. Request values may only lower these ceilings.
+type ConnectorConfig struct {
+	AllowedLocalPaths []string `yaml:"allowed_local_paths"`
+	AllowedURLSchemes []string `yaml:"allowed_url_schemes"`
+	MaxSourceBytes    int64    `yaml:"max_source_bytes"`
+	MaxDocuments      int      `yaml:"max_documents"`
+	MaxExtractedBytes int64    `yaml:"max_extracted_bytes"`
+	MaxDurationSecs   int      `yaml:"max_duration_seconds"`
+	MaxGitFiles       int      `yaml:"max_git_files"`
+	MaxGitFileBytes   int64    `yaml:"max_git_file_bytes"`
+	MaxGitTotalBytes  int64    `yaml:"max_git_total_bytes"`
+	Exclusions        []string `yaml:"exclusions"`
+}
+
 // LogConfig holds logging settings.
 type LogConfig struct {
 	Level  string `yaml:"level"`
@@ -206,6 +222,9 @@ func validate(cfg *Config) error {
 	}
 	if cfg.Sync.TaskRetentionHours < 1 || cfg.Sync.ReportRetentionHours < 1 || cfg.Sync.StagingRetentionHours < 1 {
 		return fmt.Errorf("config: sync retention hours must be positive")
+	}
+	if cfg.Connectors.MaxSourceBytes < 1 || cfg.Connectors.MaxDocuments < 1 || cfg.Connectors.MaxExtractedBytes < 1 || cfg.Connectors.MaxDurationSecs < 1 || cfg.Connectors.MaxGitFiles < 1 || cfg.Connectors.MaxGitFileBytes < 1 || cfg.Connectors.MaxGitTotalBytes < 1 {
+		return fmt.Errorf("config: connector limits must be positive")
 	}
 	return nil
 }
@@ -383,6 +402,36 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Sync.StagingRetentionHours == 0 {
 		cfg.Sync.StagingRetentionHours = 24
+	}
+
+	// Connectors are opt-in at the request surface. Their defaults are bounded
+	// and local-only; URL loading still rejects non-public destinations.
+	if len(cfg.Connectors.AllowedLocalPaths) == 0 {
+		cfg.Connectors.AllowedLocalPaths = []string{"."}
+	}
+	if len(cfg.Connectors.AllowedURLSchemes) == 0 {
+		cfg.Connectors.AllowedURLSchemes = []string{"http", "https"}
+	}
+	if cfg.Connectors.MaxSourceBytes == 0 {
+		cfg.Connectors.MaxSourceBytes = 20 << 20
+	}
+	if cfg.Connectors.MaxDocuments == 0 {
+		cfg.Connectors.MaxDocuments = 500
+	}
+	if cfg.Connectors.MaxExtractedBytes == 0 {
+		cfg.Connectors.MaxExtractedBytes = 50 << 20
+	}
+	if cfg.Connectors.MaxDurationSecs == 0 {
+		cfg.Connectors.MaxDurationSecs = 60
+	}
+	if cfg.Connectors.MaxGitFiles == 0 {
+		cfg.Connectors.MaxGitFiles = 2000
+	}
+	if cfg.Connectors.MaxGitFileBytes == 0 {
+		cfg.Connectors.MaxGitFileBytes = 2 << 20
+	}
+	if cfg.Connectors.MaxGitTotalBytes == 0 {
+		cfg.Connectors.MaxGitTotalBytes = 50 << 20
 	}
 
 	// Log

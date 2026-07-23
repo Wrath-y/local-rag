@@ -89,6 +89,16 @@ RAG server started (PID: xxxxx) at http://127.0.0.1:8765
 | 飞书文档链接 | 链接 URL |
 | 本地文件路径 | 文件名（如 `手册.txt`） |
 
+### 生产连接器
+
+`POST /ingest` 和 MCP `rag_ingest` 支持显式 `kind`：`txt`、`json`、`pdf`、`docx`、`web_url` 和 `git`。本地文档/仓库使用 `path`，网页或 HTTPS/SSH Git 远程仓库使用 `url`；Git 可附带 `ref`、增量 `exclusions` 和只能收紧上限的 `limits`。
+
+```json
+{"kind":"git","path":"/approved/project","ref":"v1.2.0","exclusions":["generated/"]}
+```
+
+TXT 会规范为 UTF-8，JSON 使用确定性渲染；PDF/DOCX 必须有可提取文本。网页只抓取一个页面，不执行脚本、不递归抓取，并拒绝凭据和内网目标。Git 仅支持白名单本地路径与无凭据 HTTPS/SSH 地址；使用主机 Git credential helper/SSH agent，禁用 submodule/LFS，远程临时 clone 会在完成或失败后清理。保存的来源信息只含脱敏后的规范标识、加载器和 Git 路径/ref/revision。
+
 ### 🔍 检索知识库
 
 ```bash
@@ -297,6 +307,14 @@ agent:
 # 存储
 storage:
   db_path: "data/rag.db"
+
+# 生产连接器：本地路径白名单和服务端上限（请求只能收紧）
+connectors:
+  allowed_local_paths: ["."]
+  max_source_bytes: 20971520
+  max_documents: 500
+  max_duration_seconds: 60
+  max_git_files: 2000
 
 # 增量来源同步：默认关闭，旧的 /ingest 调用不受影响
 sync:

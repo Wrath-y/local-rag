@@ -15,6 +15,9 @@ type Provenance struct {
 	Title    string
 	URI      string
 	Location string
+	// ConnectorMetadata is a validated, schema-versioned JSON envelope. It is
+	// nullable so chunks created by older releases remain readable.
+	ConnectorMetadata string
 }
 
 // InsertChunk inserts a chunk with its embedding vector.
@@ -45,8 +48,8 @@ func (s *Store) InsertChunkWithProvenance(text, source, md5, parentText, parentI
 
 	// 3. Insert into chunks table
 	res, err := tx.Exec(
-		"INSERT INTO chunks (text, source, md5, parent_text, parent_id, document_title, document_uri, location, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		text, source, md5, parentText, parentID, provenance.Title, provenance.URI, provenance.Location, time.Now().UTC().Format(time.RFC3339),
+		"INSERT INTO chunks (text, source, md5, parent_text, parent_id, document_title, document_uri, location, connector_metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		text, source, md5, parentText, parentID, provenance.Title, provenance.URI, provenance.Location, provenance.ConnectorMetadata, time.Now().UTC().Format(time.RFC3339),
 	)
 	if err != nil {
 		return 0, fmt.Errorf("insert chunk: %w", err)

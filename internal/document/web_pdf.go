@@ -27,13 +27,16 @@ const (
 )
 
 // PDFLoader extracts embedded text from an explicitly selected local PDF.
-type PDFLoader struct{}
+type PDFLoader struct{ Options Options }
 
 func (PDFLoader) Name() string { return "pdf" }
 func (PDFLoader) Supports(request Request) bool {
 	return request.Kind == InputPDF || (request.Kind == InputAuto && strings.EqualFold(filepath.Ext(request.Path), ".pdf"))
 }
-func (PDFLoader) Load(_ context.Context, request Request) ([]Document, error) {
+func (loader PDFLoader) Load(_ context.Context, request Request) ([]Document, error) {
+	if err := validateLocalPath(loader.Options, request.Path); err != nil {
+		return nil, err
+	}
 	info, err := os.Stat(request.Path)
 	if err != nil {
 		return nil, unavailableFileError(err)
@@ -41,7 +44,8 @@ func (PDFLoader) Load(_ context.Context, request Request) ([]Document, error) {
 	if !info.Mode().IsRegular() {
 		return nil, NewError(UnavailableInput, "The requested PDF path is not a readable file.", nil)
 	}
-	if info.Size() > maxPDFBytes {
+	limit := effectiveLimits(loader.Options.Limits, request.Limits).SourceBytes
+	if info.Size() > maxPDFBytes || (limit > 0 && info.Size() > limit) {
 		return nil, NewError(LoadFailed, "The PDF is too large to ingest.", nil)
 	}
 	file, reader, err := pdf.Open(request.Path)
@@ -65,7 +69,7 @@ func (PDFLoader) Load(_ context.Context, request Request) ([]Document, error) {
 		source = filepath.Base(request.Path)
 	}
 	return []Document{{Content: string(contents), Metadata: Metadata{
-		Source: source, DisplayName: source, Kind: InputPDF, Provenance: normalizeProvenance(request.Provenance),
+		Source: source, DisplayName: source, Kind: InputPDF, Provenance: mergedProvenance(request.Provenance, map[string]string{"source_uri": canonicalLocalPath(request.Path), "loader": "pdf/v1", "source_kind": "pdf", "content_type": "application/pdf"}),
 	}}}, nil
 }
 
@@ -74,6 +78,7 @@ func (PDFLoader) Load(_ context.Context, request Request) ([]Document, error) {
 type WebLoader struct {
 	Resolver *net.Resolver
 	Client   *http.Client
+	Options  Options
 }
 
 func (WebLoader) Name() string { return "web-url" }
@@ -81,6 +86,9 @@ func (WebLoader) Supports(request Request) bool {
 	return request.Kind == InputWebURL || (request.Kind == InputAuto && isHTTPURL(request.URL))
 }
 func (loader WebLoader) Load(ctx context.Context, request Request) ([]Document, error) {
+	if !allowsScheme(loader.Options, request.URL) {
+		return nil, NewError(PolicyRejected, "The URL scheme is not allowed.", nil)
+	}
 	parsed, err := parseSafeWebURL(ctx, loader.resolver(), request.URL)
 	if err != nil {
 		return nil, err
@@ -108,7 +116,7 @@ func (loader WebLoader) Load(ctx context.Context, request Request) ([]Document, 
 	if err != nil {
 		return nil, NewError(LoadFailed, "The web page could not be loaded. Please try again later.", err)
 	}
-	if int64(len(body)) > maxWebResponseBytes {
+	if int64(len(body)) > minPositive(maxWebResponseBytes, effectiveLimits(loader.Options.Limits, request.Limits).SourceBytes) {
 		return nil, NewError(LoadFailed, "The web page is too large to ingest.", nil)
 	}
 	content, err := extractWebContent(response.Header.Get("Content-Type"), body)
@@ -123,7 +131,7 @@ func (loader WebLoader) Load(ctx context.Context, request Request) ([]Document, 
 		source = response.Request.URL.String()
 	}
 	return []Document{{Content: content, Metadata: Metadata{
-		Source: source, DisplayName: source, Kind: InputWebURL, Provenance: normalizeProvenance(request.Provenance),
+		Source: source, DisplayName: source, Kind: InputWebURL, Provenance: mergedProvenance(request.Provenance, map[string]string{"source_uri": redactURL(response.Request.URL), "loader": "web/v1", "source_kind": "web_url", "content_type": response.Header.Get("Content-Type")}),
 	}}}, nil
 }
 

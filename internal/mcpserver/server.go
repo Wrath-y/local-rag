@@ -47,7 +47,7 @@ func Run(ctx context.Context, deps Deps) error {
 // transport so the discoverable MCP contract can be tested in memory.
 func newMCPServer(deps Deps) *mcp.Server {
 	if deps.LoaderRegistry == nil {
-		deps.LoaderRegistry = document.BuiltinRegistry(deps.FeishuResolver)
+		deps.LoaderRegistry = document.BuiltinRegistryWithOptions(deps.FeishuResolver, connectorOptions(deps.Config))
 	}
 	s := &server{deps: deps, citations: citation.NewManager(time.Hour)}
 	if deps.Store != nil {
@@ -128,13 +128,17 @@ type server struct {
 // --- Input/Output types ---
 
 type IngestInput struct {
-	Text     string `json:"text" jsonschema:"Text content to ingest into the knowledge base"`
-	Source   string `json:"source" jsonschema:"Source identifier (e.g. filename or URL). Defaults to 'manual'"`
-	Path     string `json:"path,omitempty" jsonschema:"Explicit local file path to ingest"`
-	URL      string `json:"url,omitempty" jsonschema:"Supported Feishu or LarkSuite document link to ingest"`
-	Title    string `json:"title,omitempty" jsonschema:"Optional document title for citations"`
-	URI      string `json:"uri,omitempty" jsonschema:"Optional original document URI or filesystem path for citations"`
-	Location string `json:"location,omitempty" jsonschema:"Optional document location (for example page or section)"`
+	Text       string          `json:"text" jsonschema:"Text content to ingest into the knowledge base"`
+	Source     string          `json:"source" jsonschema:"Source identifier (e.g. filename or URL). Defaults to 'manual'"`
+	Path       string          `json:"path,omitempty" jsonschema:"Explicit local file path to ingest"`
+	URL        string          `json:"url,omitempty" jsonschema:"Supported Feishu or LarkSuite document link to ingest"`
+	Title      string          `json:"title,omitempty" jsonschema:"Optional document title for citations"`
+	URI        string          `json:"uri,omitempty" jsonschema:"Optional original document URI or filesystem path for citations"`
+	Location   string          `json:"location,omitempty" jsonschema:"Optional document location (for example page or section)"`
+	Kind       string          `json:"kind,omitempty" jsonschema:"Source kind: text, txt, json, pdf, docx, web_url, or git"`
+	Ref        string          `json:"ref,omitempty" jsonschema:"Optional Git branch, tag, or commit"`
+	Exclusions []string        `json:"exclusions,omitempty" jsonschema:"Additional Git path exclusions"`
+	Limits     document.Limits `json:"limits,omitempty" jsonschema:"Optional lower-only connector limits"`
 }
 
 type IngestOutput struct {
@@ -296,6 +300,9 @@ func syncMCPError(err error) *mcp.CallToolResult {
 func (s *server) handleIngest(ctx context.Context, req *mcp.CallToolRequest, input IngestInput) (*mcp.CallToolResult, IngestOutput, error) {
 	result, err := s.ingestService.Ingest(ctx, input.documentRequest())
 	if err != nil {
+		if category, ok := document.CategoryOf(err); ok {
+			observe.IngestTotal.WithLabelValues(string(category)).Inc()
+		}
 		return ingestErrorResult(err), IngestOutput{}, nil
 	}
 	if result.ChunksAdded == 0 {
@@ -314,13 +321,20 @@ func ingestErrorResult(err error) *mcp.CallToolResult {
 
 func (input IngestInput) documentRequest() document.Request {
 	request := document.Request{
-		Text: input.Text, Path: input.Path, URL: input.URL, Source: input.Source,
+		Kind: document.InputKind(input.Kind), Text: input.Text, Path: input.Path, URL: input.URL, Source: input.Source, Ref: input.Ref, Exclusions: input.Exclusions, Limits: input.Limits,
 		Provenance: map[string]string{"title": input.Title, "uri": input.URI, "location": input.Location},
 	}
-	if input.Text != "" || (input.Path == "" && input.URL == "") {
+	if request.Kind == document.InputAuto && (input.Text != "" || (input.Path == "" && input.URL == "")) {
 		request.Kind = document.InputText
 	}
 	return request
+}
+
+func connectorOptions(cfg *config.Config) document.Options {
+	if cfg == nil {
+		return document.Options{}
+	}
+	return document.Options{AllowedLocalPaths: cfg.Connectors.AllowedLocalPaths, AllowedURLSchemes: cfg.Connectors.AllowedURLSchemes, Exclusions: cfg.Connectors.Exclusions, Limits: document.Limits{SourceBytes: cfg.Connectors.MaxSourceBytes, Documents: cfg.Connectors.MaxDocuments, ExtractedBytes: cfg.Connectors.MaxExtractedBytes, DurationSecs: cfg.Connectors.MaxDurationSecs, GitFiles: cfg.Connectors.MaxGitFiles, GitFileBytes: cfg.Connectors.MaxGitFileBytes, GitTotalBytes: cfg.Connectors.MaxGitTotalBytes}}
 }
 
 func (s *server) ingestDocument(ctx context.Context, documentValue document.Document) (int, error) {
@@ -367,7 +381,7 @@ func (s *server) ingestDocument(ctx context.Context, documentValue document.Docu
 		if location == "" {
 			location = fmt.Sprintf("chunk:%d", i+1)
 		}
-		id, err := s.deps.Store.InsertChunkWithProvenance(ch.Text, ch.Source, ch.MD5, ch.ParentText, ch.ParentID, store.Provenance{Title: title, URI: uri, Location: location}, embeddings[i])
+		id, err := s.deps.Store.InsertChunkWithProvenance(ch.Text, ch.Source, ch.MD5, ch.ParentText, ch.ParentID, store.Provenance{Title: title, URI: uri, Location: location, ConnectorMetadata: document.MetadataJSON(documentValue.Metadata)}, embeddings[i])
 		if err != nil {
 			return 0, fmt.Errorf("store document: %w", err)
 		}

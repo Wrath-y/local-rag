@@ -21,10 +21,10 @@
 **第二步：删除旧 chunks**
 
 ```bash
-curl -s -X DELETE "http://127.0.0.1:8765/source?name=<source>"
+curl -s -X DELETE "http://127.0.0.1:8765/source?source=<source>"
 ```
 
-若返回 404（来源不存在），说明该来源从未入库，跳过删除直接入库，并告知用户。
+服务总是返回 HTTP 200；`{"deleted":0}` 表示没有匹配来源，可直接入库。
 
 **第三步：写入最新内容**
 

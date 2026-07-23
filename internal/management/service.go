@@ -580,7 +580,7 @@ func max(a, b int) int {
 type archivedChunk struct {
 	ID                                      int64
 	Text, Source, MD5, ParentText, ParentID sql.NullString
-	Title, URI, Location                    sql.NullString
+	Title, URI, Location, ConnectorMetadata sql.NullString
 	CreatedAt                               string
 }
 type archivedVector struct {
@@ -674,7 +674,7 @@ func readArchive(path string) ([]archivedChunk, []archivedVector, error) {
 		}
 		return nil, nil, err
 	}
-	rows, err := db.Query("SELECT id,text,source,md5,parent_text,parent_id,document_title,document_uri,location,created_at FROM chunks ORDER BY id")
+	rows, err := db.Query("SELECT id,text,source,md5,parent_text,parent_id,document_title,document_uri,location,connector_metadata,created_at FROM chunks ORDER BY id")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -682,7 +682,7 @@ func readArchive(path string) ([]archivedChunk, []archivedVector, error) {
 	var chunks []archivedChunk
 	for rows.Next() {
 		var item archivedChunk
-		if err := rows.Scan(&item.ID, &item.Text, &item.Source, &item.MD5, &item.ParentText, &item.ParentID, &item.Title, &item.URI, &item.Location, &item.CreatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.Text, &item.Source, &item.MD5, &item.ParentText, &item.ParentID, &item.Title, &item.URI, &item.Location, &item.ConnectorMetadata, &item.CreatedAt); err != nil {
 			return nil, nil, err
 		}
 		chunks = append(chunks, item)
@@ -718,7 +718,7 @@ func (s *Service) replaceContents(chunks []archivedChunk, vectors []archivedVect
 		return err
 	}
 	for _, item := range chunks {
-		if _, err := tx.Exec("INSERT INTO chunks (id,text,source,md5,parent_text,parent_id,document_title,document_uri,location,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)", item.ID, item.Text, item.Source, item.MD5, item.ParentText, item.ParentID, item.Title, item.URI, item.Location, item.CreatedAt); err != nil {
+		if _, err := tx.Exec("INSERT INTO chunks (id,text,source,md5,parent_text,parent_id,document_title,document_uri,location,connector_metadata,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)", item.ID, item.Text, item.Source, item.MD5, item.ParentText, item.ParentID, item.Title, item.URI, item.Location, item.ConnectorMetadata, item.CreatedAt); err != nil {
 			return err
 		}
 	}

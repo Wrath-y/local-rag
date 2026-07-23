@@ -83,7 +83,7 @@ func New(deps Deps) *Handler {
 		chunkStrategy:        strategy,
 	}
 	if deps.LoaderRegistry == nil {
-		deps.LoaderRegistry = document.BuiltinRegistry(deps.FeishuResolver)
+		deps.LoaderRegistry = document.BuiltinRegistryWithOptions(deps.FeishuResolver, connectorOptions(deps.Config))
 		h.deps.LoaderRegistry = deps.LoaderRegistry
 	}
 	h.ingestService = document.Service{
@@ -108,4 +108,11 @@ func New(deps Deps) *Handler {
 	h.hookObservations = observe.NewHookObservations()
 	h.citations = citation.NewManager(time.Hour)
 	return h
+}
+
+func connectorOptions(cfg *config.Config) document.Options {
+	if cfg == nil {
+		return document.Options{}
+	}
+	return document.Options{AllowedLocalPaths: cfg.Connectors.AllowedLocalPaths, AllowedURLSchemes: cfg.Connectors.AllowedURLSchemes, Exclusions: cfg.Connectors.Exclusions, Limits: document.Limits{SourceBytes: cfg.Connectors.MaxSourceBytes, Documents: cfg.Connectors.MaxDocuments, ExtractedBytes: cfg.Connectors.MaxExtractedBytes, DurationSecs: cfg.Connectors.MaxDurationSecs, GitFiles: cfg.Connectors.MaxGitFiles, GitFileBytes: cfg.Connectors.MaxGitFileBytes, GitTotalBytes: cfg.Connectors.MaxGitTotalBytes}}
 }

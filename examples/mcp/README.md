@@ -77,7 +77,7 @@ MCP mode calls internal services (store, embedder, chunker) directly — no HTTP
 
 | Tool | Description | Parameters |
 |------|-------------|------------|
-| `rag_ingest` | Ingest text into the knowledge base | `text` (required), `source` (optional, default "manual") |
+| `rag_ingest` | Ingest text or a connector source | `text` or explicit `kind` + `path`/`url`; optional `source`, Git `ref`/`exclusions`, lower-only `limits` |
 | `rag_retrieve` | Hybrid vector + keyword search | `query` (required), `top_k` (optional) |
 | `rag_list_sources` | List all sources with chunk counts | none |
 | `rag_delete_source` | Delete all chunks from a source | `source` (required) |
@@ -99,6 +99,10 @@ MCP mode calls internal services (store, embedder, chunker) directly — no HTTP
 
 ### rag_ingest
 
+In addition to direct text, connector kinds are `txt`, `json`, `pdf`, `docx`,
+`web_url`, and `git`. Git remotes must be credential-free HTTPS/SSH URLs; the
+host credential helper or SSH agent supplies authentication.
+
 ```json
 {
   "text": "Redis cache penetration occurs when queries for non-existent keys bypass the cache and hit the database directly...",
@@ -106,7 +110,7 @@ MCP mode calls internal services (store, embedder, chunker) directly — no HTTP
 }
 ```
 
-Response: `Ingested 3 chunks from source "redis-guide".`
+Response: `Ingested N chunks.` (`N` depends on the configured chunk strategy.)
 
 ### rag_retrieve
 

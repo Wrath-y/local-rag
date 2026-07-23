@@ -83,6 +83,20 @@ func TestDeleteSource(t *testing.T) {
 	}
 }
 
+func TestDeleteSourceDeletesCanonicalGitDescendantsOnly(t *testing.T) {
+	s := newManageTestStore(t)
+	insertTestChunk(t, s, "one", "https://example.test/repo.git#guide.md", "git-1")
+	insertTestChunk(t, s, "two", "https://example.test/repo.git#api.md", "git-2")
+	insertTestChunk(t, s, "keep", "https://example.test/other.git#guide.md", "git-3")
+	deleted, err := s.DeleteSource("https://example.test/repo.git")
+	if err != nil || deleted != 2 {
+		t.Fatalf("deleted=%d err=%v", deleted, err)
+	}
+	if count, _ := s.ChunkCount(); count != 1 {
+		t.Fatalf("remaining=%d", count)
+	}
+}
+
 func TestDeleteSource_NonExistent(t *testing.T) {
 	s := newManageTestStore(t)
 

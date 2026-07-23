@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS chunks (
     document_title TEXT,
     document_uri TEXT,
     location TEXT,
+	connector_metadata TEXT,
     created_at TEXT    NOT NULL
 );
 
@@ -107,6 +108,7 @@ func ensureChunkCitationColumns(db *sql.DB) error {
 		{"document_title", "ALTER TABLE chunks ADD COLUMN document_title TEXT"},
 		{"document_uri", "ALTER TABLE chunks ADD COLUMN document_uri TEXT"},
 		{"location", "ALTER TABLE chunks ADD COLUMN location TEXT"},
+		{"connector_metadata", "ALTER TABLE chunks ADD COLUMN connector_metadata TEXT"},
 	}
 	for _, column := range columns {
 		var exists bool
