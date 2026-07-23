@@ -6,6 +6,7 @@ import (
 	"github.com/Wrath-y/local-rag/internal/chunk"
 	"github.com/Wrath-y/local-rag/internal/citation"
 	"github.com/Wrath-y/local-rag/internal/config"
+	"github.com/Wrath-y/local-rag/internal/document"
 	"github.com/Wrath-y/local-rag/internal/management"
 	"github.com/Wrath-y/local-rag/internal/observe"
 	"github.com/Wrath-y/local-rag/internal/provider"
@@ -23,6 +24,10 @@ type Deps struct {
 	LLM        provider.LLMProvider    // may be nil
 	Chunker    chunk.Chunker
 	Management *management.Service
+	// LoaderRegistry and FeishuResolver make input resolution explicit and
+	// replaceable in tests. A nil resolver safely rejects Feishu URLs.
+	LoaderRegistry *document.Registry
+	FeishuResolver document.FeishuResolver
 }
 
 // Handler is the HTTP handler collection.
@@ -33,6 +38,7 @@ type Handler struct {
 	citations        *citation.Manager
 	management       *management.Service
 	agent            agentState
+	ingestService    document.Service
 
 	// runtime toggleable state
 	rerankEnabled        bool
@@ -72,6 +78,14 @@ func New(deps Deps) *Handler {
 		management:           deps.Management,
 		queryRewriteStrategy: "expansion",
 		chunkStrategy:        strategy,
+	}
+	if deps.LoaderRegistry == nil {
+		deps.LoaderRegistry = document.BuiltinRegistry(deps.FeishuResolver)
+		h.deps.LoaderRegistry = deps.LoaderRegistry
+	}
+	h.ingestService = document.Service{
+		Registry: deps.LoaderRegistry,
+		Pipeline: document.PipelineFunc(h.ingestDocument),
 	}
 	dims := 0
 	if deps.Config != nil {

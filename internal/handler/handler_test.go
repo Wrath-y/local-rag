@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/Wrath-y/local-rag/internal/chunk"
 	"github.com/Wrath-y/local-rag/internal/config"
+	"github.com/Wrath-y/local-rag/internal/document"
 	"github.com/Wrath-y/local-rag/internal/observe"
 	"github.com/Wrath-y/local-rag/internal/store"
 )
@@ -61,9 +63,11 @@ func (m *mockEmbedder) Dims() int {
 type mockChunker struct {
 	chunks []chunk.Chunk
 	err    error
+	calls  int
 }
 
 func (m *mockChunker) Chunk(text, source string) ([]chunk.Chunk, error) {
+	m.calls++
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -160,6 +164,66 @@ func TestIngest_MissingText(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", w.Code)
 	}
+}
+
+func TestIngest_DefaultsLegacyTextRequestToManualSource(t *testing.T) {
+	st := newTestStore(t)
+	h := New(testDeps(t, st))
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/ingest", bytes.NewBufferString(`{"text":"legacy request"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	h.Ingest(c)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	sources, err := st.ListSources()
+	if err != nil || len(sources) != 1 || sources[0].Source != "manual" {
+		t.Fatalf("sources = %#v, %v", sources, err)
+	}
+}
+
+func TestIngest_RejectsInvalidLoaderResultBeforePipeline(t *testing.T) {
+	st := newTestStore(t)
+	deps := testDeps(t, st)
+	chunker := &mockChunker{}
+	deps.Chunker = chunker
+	deps.LoaderRegistry = document.NewRegistry(invalidResultLoader{})
+	h := New(deps)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/ingest", bytes.NewBufferString(`{"text":"ignored"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	h.Ingest(c)
+	if w.Code != http.StatusBadRequest || chunker.calls != 0 {
+		t.Fatalf("status=%d pipeline calls=%d body=%s", w.Code, chunker.calls, w.Body.String())
+	}
+}
+
+func TestIngest_SanitizesDownstreamFailure(t *testing.T) {
+	st := newTestStore(t)
+	deps := testDeps(t, st)
+	deps.Embedder = &mockEmbedder{dims: 4, err: errors.New("credential=secret")}
+	h := New(deps)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/ingest", bytes.NewBufferString(`{"text":"content"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	h.Ingest(c)
+	if w.Code != http.StatusInternalServerError || !bytes.Contains(w.Body.Bytes(), []byte(`"code":"ingest_failed"`)) || bytes.Contains(w.Body.Bytes(), []byte("secret")) {
+		t.Fatalf("unexpected response %d: %s", w.Code, w.Body.String())
+	}
+}
+
+type invalidResultLoader struct{}
+
+func (invalidResultLoader) Name() string                   { return "invalid" }
+func (invalidResultLoader) Supports(document.Request) bool { return true }
+func (invalidResultLoader) Load(context.Context, document.Request) ([]document.Document, error) {
+	return []document.Document{
+		{Content: "one", Metadata: document.Metadata{Source: "duplicate", DisplayName: "one", Kind: document.InputText}},
+		{Content: "two", Metadata: document.Metadata{Source: "duplicate", DisplayName: "two", Kind: document.InputText}},
+	}, nil
 }
 
 // ---------------------------------------------------------------------------

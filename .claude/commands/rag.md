@@ -1,4 +1,4 @@
-存入向量库（支持文本、飞书链接、任意网页 URL、本地文件路径、PDF）
+存入向量库（支持文本、飞书文档链接、任意 HTTP(S) 网页、本地纯文本文件和 PDF）
 
 输入参数：$ARGUMENTS
 
@@ -13,7 +13,7 @@
 
 未指定 `--source` 时，按以下规则自动推断：
 - 飞书文档链接 → `source` = 链接 URL
-- 任意网页 URL → `source` = 链接 URL
+- HTTP(S) 网页 URL → `source` = 最终安全访问的 URL
 - 本地文件路径 → `source` = 文件名（basename，不含目录）
 - 其他文本 → `source` = "manual"
 
@@ -22,18 +22,33 @@
 根据去掉 `--source` 后的剩余输入判断类型：
 
 1. **飞书文档链接**（含 `feishu.cn` / `larksuite.com`）→ 用 lark-doc 技能获取文档正文
-2. **任意 HTTP/HTTPS URL**（非飞书）→ 用 WebFetch 工具抓取页面正文，提取纯文本内容
-3. **本地文件路径**（以 `/` 或 `./` 开头，或明确是路径格式）→ 用 Read 工具读取文件内容（支持 `.txt` `.md` `.pdf` `.py` 等所有 Read 工具支持的格式）
-4. **其他** → 直接作为文本输入
+2. **HTTP/HTTPS URL**（非飞书）→ 将 URL 交给服务的安全网页加载器；它只读取该页面，不执行脚本或抓取链接
+3. **本地 PDF 路径**（`.pdf`）→ 将路径交给服务的 PDF 文本加载器
+4. **其他本地文件路径** → 用 Read 工具读取当前支持的纯文本内容
+5. **其他** → 直接作为文本输入
+
+网页加载拒绝含凭据、内网/本机目标、过多重定向、超时或过大的响应；不支持 Office 文档、压缩包或其他云盘连接器。PDF 必须含可提取的文本（不支持扫描件 OCR）。
 
 ## 写入
 
-POST 内容到 `/ingest`，附带 source：
+普通文本或已解析的飞书内容使用 `text` 和 `source`：
 
 ```bash
 curl -s -X POST http://127.0.0.1:8765/ingest \
   -H "Content-Type: application/json" \
   -d "{\"text\": \"<内容>\", \"source\": \"<source>\"}"
+```
+
+网页 URL 使用 `url`，本地 PDF 使用 `path`：
+
+```bash
+curl -s -X POST http://127.0.0.1:8765/ingest \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com/article"}'
+
+curl -s -X POST http://127.0.0.1:8765/ingest \
+  -H "Content-Type: application/json" \
+  -d '{"path": "/path/to/document.pdf"}'
 ```
 
 告知用户写入了多少个 chunk 及来源标识。

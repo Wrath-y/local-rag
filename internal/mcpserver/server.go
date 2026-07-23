@@ -16,6 +16,7 @@ import (
 	"github.com/Wrath-y/local-rag/internal/chunk"
 	"github.com/Wrath-y/local-rag/internal/citation"
 	"github.com/Wrath-y/local-rag/internal/config"
+	"github.com/Wrath-y/local-rag/internal/document"
 	"github.com/Wrath-y/local-rag/internal/management"
 	"github.com/Wrath-y/local-rag/internal/observe"
 	"github.com/Wrath-y/local-rag/internal/provider"
@@ -24,13 +25,15 @@ import (
 
 // Deps mirrors handler.Deps — holds all internal services.
 type Deps struct {
-	Config     *config.Config
-	Store      *store.Store
-	Embedder   provider.EmbedProvider
-	Reranker   provider.RerankProvider
-	LLM        provider.LLMProvider
-	Chunker    chunk.Chunker
-	Management *management.Service
+	Config         *config.Config
+	Store          *store.Store
+	Embedder       provider.EmbedProvider
+	Reranker       provider.RerankProvider
+	LLM            provider.LLMProvider
+	Chunker        chunk.Chunker
+	Management     *management.Service
+	LoaderRegistry *document.Registry
+	FeishuResolver document.FeishuResolver
 }
 
 // Run creates and starts the MCP server over stdio transport.
@@ -42,7 +45,14 @@ func Run(ctx context.Context, deps Deps) error {
 // newMCPServer constructs the complete registry separately from the stdio
 // transport so the discoverable MCP contract can be tested in memory.
 func newMCPServer(deps Deps) *mcp.Server {
+	if deps.LoaderRegistry == nil {
+		deps.LoaderRegistry = document.BuiltinRegistry(deps.FeishuResolver)
+	}
 	s := &server{deps: deps, citations: citation.NewManager(time.Hour)}
+	s.ingestService = document.Service{
+		Registry: deps.LoaderRegistry,
+		Pipeline: document.PipelineFunc(s.ingestDocument),
+	}
 
 	mcpServer := mcp.NewServer(
 		&mcp.Implementation{
@@ -95,8 +105,9 @@ func newMCPServer(deps Deps) *mcp.Server {
 }
 
 type server struct {
-	deps      Deps
-	citations *citation.Manager
+	deps          Deps
+	citations     *citation.Manager
+	ingestService document.Service
 }
 
 // --- Input/Output types ---
@@ -104,6 +115,8 @@ type server struct {
 type IngestInput struct {
 	Text     string `json:"text" jsonschema:"Text content to ingest into the knowledge base"`
 	Source   string `json:"source" jsonschema:"Source identifier (e.g. filename or URL). Defaults to 'manual'"`
+	Path     string `json:"path,omitempty" jsonschema:"Explicit local file path to ingest"`
+	URL      string `json:"url,omitempty" jsonschema:"Supported Feishu or LarkSuite document link to ingest"`
 	Title    string `json:"title,omitempty" jsonschema:"Optional document title for citations"`
 	URI      string `json:"uri,omitempty" jsonschema:"Optional original document URI or filesystem path for citations"`
 	Location string `json:"location,omitempty" jsonschema:"Optional document location (for example page or section)"`
@@ -194,20 +207,42 @@ type TaskStatusOutput = management.Task
 // --- Handlers ---
 
 func (s *server) handleIngest(ctx context.Context, req *mcp.CallToolRequest, input IngestInput) (*mcp.CallToolResult, IngestOutput, error) {
-	if input.Text == "" {
-		return errResult("text is required"), IngestOutput{}, nil
-	}
-	if input.Source == "" {
-		input.Source = "manual"
-	}
-
-	// Chunk
-	chunks, err := s.deps.Chunker.Chunk(input.Text, input.Source)
+	result, err := s.ingestService.Ingest(ctx, input.documentRequest())
 	if err != nil {
-		return errResult(fmt.Sprintf("chunking failed: %v", err)), IngestOutput{}, nil
+		return ingestErrorResult(err), IngestOutput{}, nil
+	}
+	if result.ChunksAdded == 0 {
+		return textResult("Content already exists (duplicate), skipped."), IngestOutput{Status: "skip"}, nil
+	}
+	return textResult(fmt.Sprintf("Ingested %d chunks.", result.ChunksAdded)), IngestOutput{Status: "ok", ChunksAdded: result.ChunksAdded}, nil
+}
+
+func ingestErrorResult(err error) *mcp.CallToolResult {
+	category, ok := document.CategoryOf(err)
+	if !ok {
+		category = document.IngestFailed
+	}
+	return errResult(fmt.Sprintf("[%s] %s", category, document.PublicMessage(err)))
+}
+
+func (input IngestInput) documentRequest() document.Request {
+	request := document.Request{
+		Text: input.Text, Path: input.Path, URL: input.URL, Source: input.Source,
+		Provenance: map[string]string{"title": input.Title, "uri": input.URI, "location": input.Location},
+	}
+	if input.Text != "" || (input.Path == "" && input.URL == "") {
+		request.Kind = document.InputText
+	}
+	return request
+}
+
+func (s *server) ingestDocument(ctx context.Context, documentValue document.Document) (int, error) {
+	chunks, err := s.deps.Chunker.Chunk(documentValue.Content, documentValue.Metadata.Source)
+	if err != nil {
+		return 0, fmt.Errorf("chunk document: %w", err)
 	}
 	if len(chunks) == 0 {
-		return textResult("Content is empty after chunking, nothing to ingest."), IngestOutput{Status: "skip"}, nil
+		return 0, nil
 	}
 
 	// Batch embed
@@ -218,53 +253,49 @@ func (s *server) handleIngest(ctx context.Context, req *mcp.CallToolRequest, inp
 	}
 	embeddings, err := s.deps.Embedder.Embed(ctx, texts)
 	if err != nil {
-		return errResult(fmt.Sprintf("embedding failed: %v", err)), IngestOutput{}, nil
+		return 0, fmt.Errorf("embed document: %w", err)
+	}
+	if len(embeddings) != len(chunks) {
+		return 0, fmt.Errorf("embedding count mismatch")
 	}
 
 	// Store
 	added := 0
 	for i, ch := range chunks {
 		uri := ch.URI
-		if input.URI != "" {
-			uri = input.URI
+		if documentValue.Metadata.Provenance["uri"] != "" {
+			uri = documentValue.Metadata.Provenance["uri"]
 		}
 		if uri == "" {
 			uri = ch.Source
 		}
 		title := ch.Title
-		if input.Title != "" {
-			title = input.Title
+		if documentValue.Metadata.Provenance["title"] != "" {
+			title = documentValue.Metadata.Provenance["title"]
 		}
 		location := ch.Location
-		if input.Location != "" {
-			location = input.Location
+		if documentValue.Metadata.Provenance["location"] != "" {
+			location = documentValue.Metadata.Provenance["location"]
 		}
 		if location == "" {
 			location = fmt.Sprintf("chunk:%d", i+1)
 		}
 		id, err := s.deps.Store.InsertChunkWithProvenance(ch.Text, ch.Source, ch.MD5, ch.ParentText, ch.ParentID, store.Provenance{Title: title, URI: uri, Location: location}, embeddings[i])
 		if err != nil {
-			return errResult(fmt.Sprintf("store error: %v", err)), IngestOutput{}, nil
+			return 0, fmt.Errorf("store document: %w", err)
 		}
 		if id != 0 {
 			added++
 		}
 	}
 
-	// Metrics
 	if added > 0 {
 		observe.IngestTotal.WithLabelValues("ok").Inc()
 		observe.ChunkTotal.Add(float64(added))
 	} else {
 		observe.IngestTotal.WithLabelValues("skip").Inc()
 	}
-
-	out := IngestOutput{Status: "ok", ChunksAdded: added}
-	if added == 0 {
-		out.Status = "skip"
-		return textResult("Content already exists (duplicate), skipped."), out, nil
-	}
-	return textResult(fmt.Sprintf("Ingested %d chunks from source %q.", added, input.Source)), out, nil
+	return added, nil
 }
 
 func (s *server) handleRetrieve(ctx context.Context, req *mcp.CallToolRequest, input RetrieveInput) (*mcp.CallToolResult, RetrieveOutput, error) {
