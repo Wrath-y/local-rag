@@ -20,6 +20,7 @@ import (
 	"github.com/Wrath-y/local-rag/internal/management"
 	"github.com/Wrath-y/local-rag/internal/observe"
 	"github.com/Wrath-y/local-rag/internal/provider"
+	"github.com/Wrath-y/local-rag/internal/sourcesync"
 	"github.com/Wrath-y/local-rag/internal/store"
 )
 
@@ -49,6 +50,14 @@ func newMCPServer(deps Deps) *mcp.Server {
 		deps.LoaderRegistry = document.BuiltinRegistry(deps.FeishuResolver)
 	}
 	s := &server{deps: deps, citations: citation.NewManager(time.Hour)}
+	if deps.Store != nil {
+		s.sync = sourcesync.New(deps.Store, deps.Chunker, deps.Embedder, deps.Config)
+		if deps.Config != nil && deps.Config.Sync.Enabled {
+			if err := s.sync.Start(); err != nil {
+				panic("start sync dispatcher: " + err.Error())
+			}
+		}
+	}
 	s.ingestService = document.Service{
 		Registry: deps.LoaderRegistry,
 		Pipeline: document.PipelineFunc(s.ingestDocument),
@@ -86,6 +95,11 @@ func newMCPServer(deps Deps) *mcp.Server {
 		Name:        "rag_status",
 		Description: "Get the status of the RAG knowledge base including total chunk count.",
 	}, s.handleStatus)
+	mcp.AddTool(mcpServer, &mcp.Tool{Name: "rag_sync_source", Description: "Queue a durable incremental source snapshot sync."}, s.handleSyncSource)
+	mcp.AddTool(mcpServer, &mcp.Tool{Name: "rag_get_sync_status", Description: "Get a source sync task status."}, s.handleGetSyncStatus)
+	mcp.AddTool(mcpServer, &mcp.Tool{Name: "rag_get_sync_report", Description: "Get an immutable source sync report without source content."}, s.handleGetSyncReport)
+	mcp.AddTool(mcpServer, &mcp.Tool{Name: "rag_retry_sync", Description: "Retry an eligible failed or cancelled source sync."}, s.handleRetrySync)
+	mcp.AddTool(mcpServer, &mcp.Tool{Name: "rag_get_sync_baseline", Description: "Inspect aggregate metadata for a committed source sync baseline."}, s.handleGetSyncBaseline)
 
 	mcp.AddTool(mcpServer, &mcp.Tool{Name: "rag_update_source", Description: "Replace all chunks for a source with supplied content. Requires confirm: true and returns an asynchronous task."}, s.handleUpdateSource)
 	mcp.AddTool(mcpServer, &mcp.Tool{Name: "rag_reset", Description: "Remove all knowledge-base content. Requires confirm: true and returns an asynchronous task."}, s.handleReset)
@@ -108,6 +122,7 @@ type server struct {
 	deps          Deps
 	citations     *citation.Manager
 	ingestService document.Service
+	sync          *sourcesync.Service
 }
 
 // --- Input/Output types ---
@@ -204,7 +219,79 @@ type IndexStatusOutput map[string]any
 type RetrievalConfigOutput = management.RetrievalConfig
 type TaskStatusOutput = management.Task
 
+type SyncSourceInput struct {
+	Source         string               `json:"source" jsonschema:"Stable source identifier"`
+	Documents      []store.SyncDocument `json:"documents" jsonschema:"Complete snapshot documents with stable IDs"`
+	Identity       store.SyncIdentity   `json:"identity,omitempty"`
+	IdempotencyKey string               `json:"idempotency_key,omitempty"`
+}
+type SyncTaskInput struct {
+	Source string `json:"source"`
+	TaskID string `json:"task_id"`
+}
+type SyncBaselineInput struct {
+	Source string `json:"source"`
+}
+type SyncTaskOutput struct {
+	Task     store.SyncTask `json:"task"`
+	Replayed bool           `json:"replayed"`
+}
+
 // --- Handlers ---
+
+func (s *server) handleSyncSource(ctx context.Context, req *mcp.CallToolRequest, input SyncSourceInput) (*mcp.CallToolResult, SyncTaskOutput, error) {
+	if s.sync == nil {
+		return errResult("[disabled] incremental sync is unavailable"), SyncTaskOutput{}, nil
+	}
+	task, replayed, err := s.sync.Submit(store.SyncSnapshot{Source: input.Source, Documents: input.Documents, Identity: input.Identity}, input.IdempotencyKey)
+	if err != nil {
+		return syncMCPError(err), SyncTaskOutput{}, nil
+	}
+	return textResult(fmt.Sprintf("Sync task %s accepted (%s).", task.ID, task.State)), SyncTaskOutput{Task: task, Replayed: replayed}, nil
+}
+func (s *server) handleGetSyncStatus(ctx context.Context, req *mcp.CallToolRequest, input SyncTaskInput) (*mcp.CallToolResult, store.SyncTask, error) {
+	if s.sync == nil {
+		return errResult("[disabled] incremental sync is unavailable"), store.SyncTask{}, nil
+	}
+	task, err := s.sync.Store.GetSyncTask(input.Source, input.TaskID)
+	if err != nil {
+		return syncMCPError(err), store.SyncTask{}, nil
+	}
+	return textResult(fmt.Sprintf("Sync task %s is %s.", task.ID, task.State)), task, nil
+}
+func (s *server) handleGetSyncReport(ctx context.Context, req *mcp.CallToolRequest, input SyncTaskInput) (*mcp.CallToolResult, store.SyncReport, error) {
+	if s.sync == nil {
+		return errResult("[disabled] incremental sync is unavailable"), store.SyncReport{}, nil
+	}
+	report, err := s.sync.Store.GetSyncReport(input.Source, input.TaskID)
+	if err != nil {
+		return syncMCPError(err), store.SyncReport{}, nil
+	}
+	return textResult(fmt.Sprintf("Sync report for task %s.", report.TaskID)), report, nil
+}
+func (s *server) handleRetrySync(ctx context.Context, req *mcp.CallToolRequest, input SyncTaskInput) (*mcp.CallToolResult, store.SyncTask, error) {
+	if s.sync == nil {
+		return errResult("[disabled] incremental sync is unavailable"), store.SyncTask{}, nil
+	}
+	task, err := s.sync.Retry(input.Source, input.TaskID)
+	if err != nil {
+		return syncMCPError(err), store.SyncTask{}, nil
+	}
+	return textResult(fmt.Sprintf("Retry task %s accepted.", task.ID)), task, nil
+}
+func (s *server) handleGetSyncBaseline(ctx context.Context, req *mcp.CallToolRequest, input SyncBaselineInput) (*mcp.CallToolResult, store.SyncBaseline, error) {
+	if s.sync == nil {
+		return errResult("[disabled] incremental sync is unavailable"), store.SyncBaseline{}, nil
+	}
+	baseline, err := s.sync.Store.GetSyncBaseline(input.Source)
+	if err != nil {
+		return syncMCPError(err), store.SyncBaseline{}, nil
+	}
+	return textResult(fmt.Sprintf("Source %s baseline revision %d.", baseline.Source, baseline.Revision)), baseline, nil
+}
+func syncMCPError(err error) *mcp.CallToolResult {
+	return errResult(fmt.Sprintf("[%s] %s", store.SyncErrorCode(err), err.Error()))
+}
 
 func (s *server) handleIngest(ctx context.Context, req *mcp.CallToolRequest, input IngestInput) (*mcp.CallToolResult, IngestOutput, error) {
 	result, err := s.ingestService.Ingest(ctx, input.documentRequest())

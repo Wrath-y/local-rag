@@ -56,6 +56,16 @@ storage:
       days: 7                # 过去 N 天每天保留 1 份
       weeks: 4               # 过去 M 周每周保留 1 份
 
+# 增量来源同步（默认关闭）。开启后使用持久化异步任务，只为新增或变化的 chunk 生成向量。
+sync:
+  enabled: false
+  workers: 1                 # 本地同步工作协程数
+  max_snapshot_bytes: 16777216 # 单次完整来源快照最大字节数（16 MiB）
+  max_attempts: 3            # 同一根任务允许的最大尝试次数（含首次）
+  task_retention_hours: 168  # 任务默认保留 7 天
+  report_retention_hours: 720 # 报告默认保留 30 天
+  staging_retention_hours: 24 # 失败/完成任务的暂存数据保留 24 小时
+
 log:
   lang: "en"   # 日志语言：zh（中文）或 en（English）
 

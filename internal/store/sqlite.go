@@ -89,6 +89,10 @@ END;
 		db.Close()
 		return nil, fmt.Errorf("store.New: migrate citation columns: %w", err)
 	}
+	if err := ensureSyncSchema(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("store.New: migrate sync schema: %w", err)
+	}
 
 	return &Store{db: db, dims: dims}, nil
 }

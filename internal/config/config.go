@@ -19,6 +19,7 @@ type Config struct {
 	Agent        AgentConfig        `yaml:"agent"`
 	Storage      StorageConfig      `yaml:"storage"`
 	Sidecar      SidecarConfig      `yaml:"sidecar"`
+	Sync         SyncConfig         `yaml:"sync"`
 	Log          LogConfig          `yaml:"log"`
 }
 
@@ -155,6 +156,17 @@ type SidecarConfig struct {
 	StartupTimeout int `yaml:"startup_timeout"`
 }
 
+// SyncConfig controls the opt-in, durable incremental source synchronizer.
+type SyncConfig struct {
+	Enabled               bool `yaml:"enabled"`
+	Workers               int  `yaml:"workers"`
+	MaxSnapshotBytes      int  `yaml:"max_snapshot_bytes"`
+	MaxAttempts           int  `yaml:"max_attempts"`
+	TaskRetentionHours    int  `yaml:"task_retention_hours"`
+	ReportRetentionHours  int  `yaml:"report_retention_hours"`
+	StagingRetentionHours int  `yaml:"staging_retention_hours"`
+}
+
 // LogConfig holds logging settings.
 type LogConfig struct {
 	Level  string `yaml:"level"`
@@ -176,7 +188,26 @@ func Load(path string) (*Config, error) {
 	}
 
 	applyDefaults(&cfg)
+	if err := validate(&cfg); err != nil {
+		return nil, err
+	}
 	return &cfg, nil
+}
+
+func validate(cfg *Config) error {
+	if cfg.Sync.Workers < 1 {
+		return fmt.Errorf("config: sync.workers must be positive")
+	}
+	if cfg.Sync.MaxSnapshotBytes < 1 {
+		return fmt.Errorf("config: sync.max_snapshot_bytes must be positive")
+	}
+	if cfg.Sync.MaxAttempts < 1 {
+		return fmt.Errorf("config: sync.max_attempts must be positive")
+	}
+	if cfg.Sync.TaskRetentionHours < 1 || cfg.Sync.ReportRetentionHours < 1 || cfg.Sync.StagingRetentionHours < 1 {
+		return fmt.Errorf("config: sync retention hours must be positive")
+	}
+	return nil
 }
 
 // applyDefaults fills in sensible defaults for any zero-value fields.
@@ -332,6 +363,26 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Sidecar.StartupTimeout == 0 {
 		cfg.Sidecar.StartupTimeout = 30
+	}
+
+	// Incremental source sync stays opt-in for backwards compatibility.
+	if cfg.Sync.Workers == 0 {
+		cfg.Sync.Workers = 1
+	}
+	if cfg.Sync.MaxSnapshotBytes == 0 {
+		cfg.Sync.MaxSnapshotBytes = 16 << 20
+	}
+	if cfg.Sync.MaxAttempts == 0 {
+		cfg.Sync.MaxAttempts = 3
+	}
+	if cfg.Sync.TaskRetentionHours == 0 {
+		cfg.Sync.TaskRetentionHours = 24 * 7
+	}
+	if cfg.Sync.ReportRetentionHours == 0 {
+		cfg.Sync.ReportRetentionHours = 24 * 30
+	}
+	if cfg.Sync.StagingRetentionHours == 0 {
+		cfg.Sync.StagingRetentionHours = 24
 	}
 
 	// Log

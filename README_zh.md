@@ -145,6 +145,27 @@ curl -X POST http://127.0.0.1:8765/agent/chat \
 /rag-update /path/to/file.txt --source 产品手册v2
 ```
 
+### 增量来源同步 API
+
+在 `config.yaml` 中设置 `sync.enabled: true` 后，可使用异步增量同步接口。
+提交包含稳定文档 ID 的完整来源快照，随后轮询任务资源。未变化的 chunk 会复用已有
+向量；报告与基线接口只返回标识和汇总信息，不会返回原始文档内容。
+
+```bash
+curl -X POST http://127.0.0.1:8765/sources/product-manual/syncs \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: refresh-2026-07-23' \
+  -d '{"documents":[{"id":"intro","content":"规范化后的文档正文"}]}'
+curl http://127.0.0.1:8765/sources/product-manual/syncs/<task-id>
+curl http://127.0.0.1:8765/sources/product-manual/syncs/<task-id>/report
+```
+
+对应的 MCP 工具是 `rag_sync_source`、`rag_get_sync_status`、
+`rag_get_sync_report`、`rag_retry_sync` 和 `rag_get_sync_baseline`。
+携带同一幂等键提交等价快照会返回原任务；失败或取消的任务可在
+`sync.max_attempts` 限制内显式重试。同一来源已经存在排队或运行中的任务时，
+新请求会返回冲突。
+
 ### 📊 管理知识库
 
 ```bash
@@ -276,6 +297,16 @@ agent:
 # 存储
 storage:
   db_path: "data/rag.db"
+
+# 增量来源同步：默认关闭，旧的 /ingest 调用不受影响
+sync:
+  enabled: false
+  workers: 1
+  max_snapshot_bytes: 16777216
+  max_attempts: 3
+  task_retention_hours: 168
+  report_retention_hours: 720
+  staging_retention_hours: 24
 ```
 
 ### 使用 OpenRouter

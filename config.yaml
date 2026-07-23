@@ -56,6 +56,17 @@ storage:
       days: 7                # Retain one backup per day for the past N days
       weeks: 4               # Retain one backup per week for the past M weeks
 
+# Opt-in durable incremental source synchronization. Existing /ingest callers
+# retain their behaviour when this is disabled.
+sync:
+  enabled: false
+  workers: 1
+  max_snapshot_bytes: 16777216
+  max_attempts: 3
+  task_retention_hours: 168
+  report_retention_hours: 720
+  staging_retention_hours: 24
+
 log:
   lang: "en"   # Log language: zh (Chinese) or en (English)
 

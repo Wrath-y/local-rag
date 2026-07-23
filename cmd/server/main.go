@@ -123,6 +123,11 @@ func main() {
 
 	// Core routes.
 	r.POST("/ingest", h.Ingest)
+	r.POST("/sources/:source/syncs", h.SyncSubmit)
+	r.GET("/sources/:source/syncs/:task", h.SyncStatus)
+	r.GET("/sources/:source/syncs/:task/report", h.SyncReport)
+	r.POST("/sources/:source/syncs/:task/retry", h.SyncRetry)
+	r.GET("/sources/:source/sync-baseline", h.SyncBaseline)
 	r.POST("/retrieve", h.Retrieve)
 	r.POST("/citations/validate", h.ValidateCitations)
 	r.POST("/hook", h.Hook)

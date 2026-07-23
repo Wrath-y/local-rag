@@ -117,6 +117,27 @@ Re-sync after document changes — one command replaces "delete + re-ingest":
 /rag-update /path/to/file.txt --source Product_Manual
 ```
 
+### Incremental Source Sync API
+
+Set `sync.enabled: true` to enable the opt-in asynchronous source-sync API.
+Submit a complete snapshot with stable document IDs, then poll the returned
+task resource. Unchanged chunks retain their vectors; reports and baseline
+responses contain only identifiers and aggregates, never source content.
+
+```bash
+curl -X POST http://127.0.0.1:8765/sources/product-manual/syncs \
+  -H 'Content-Type: application/json' -H 'Idempotency-Key: refresh-2026-07-23' \
+  -d '{"documents":[{"id":"intro","content":"Canonical document text"}]}'
+curl http://127.0.0.1:8765/sources/product-manual/syncs/<task-id>
+curl http://127.0.0.1:8765/sources/product-manual/syncs/<task-id>/report
+```
+
+The equivalent MCP tools are `rag_sync_source`, `rag_get_sync_status`,
+`rag_get_sync_report`, `rag_retry_sync`, and `rag_get_sync_baseline`.
+Resubmitting an equivalent snapshot with the same key returns the original
+task. A failed or cancelled task may be explicitly retried up to
+`sync.max_attempts`; a concurrent task for the same source is rejected.
+
 ### 📊 Manage Knowledge Base
 
 ```bash

@@ -72,6 +72,16 @@ func (s *Store) DeleteSource(source string) (int, error) {
 	}
 	n, _ := res.RowsAffected()
 
+	// A source deletion is authoritative for both legacy and incremental
+	// ingestion. Remove only the committed sync baseline; task/report history is
+	// retained for auditability and any active task will fail its CAS promotion.
+	if _, err := tx.Exec(`DELETE FROM sync_sources WHERE source = ?`, source); err != nil {
+		return 0, fmt.Errorf("DeleteSource delete sync baseline: %w", err)
+	}
+	if _, err := tx.Exec(`DELETE FROM sync_staging WHERE source = ?`, source); err != nil {
+		return 0, fmt.Errorf("DeleteSource delete sync staging: %w", err)
+	}
+
 	return int(n), tx.Commit()
 }
 
@@ -92,6 +102,15 @@ func (s *Store) Reset() error {
 	// Rebuild FTS5 index to sync with the now-empty content table.
 	if _, err := tx.Exec(`INSERT INTO chunks_fts(chunks_fts) VALUES ('rebuild')`); err != nil {
 		return fmt.Errorf("Reset rebuild fts: %w", err)
+	}
+	if _, err := tx.Exec(`DELETE FROM sync_sources`); err != nil {
+		return fmt.Errorf("Reset delete sync baselines: %w", err)
+	}
+	if _, err := tx.Exec(`DELETE FROM sync_staging`); err != nil {
+		return fmt.Errorf("Reset delete sync staging: %w", err)
+	}
+	if _, err := tx.Exec(`DELETE FROM sync_leases`); err != nil {
+		return fmt.Errorf("Reset delete sync leases: %w", err)
 	}
 
 	return tx.Commit()

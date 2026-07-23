@@ -129,6 +129,27 @@ var (
 		prometheus.CounterOpts{Name: "rag_agent_terminal_total", Help: "Agent requests by terminal outcome"},
 		[]string{"outcome"},
 	)
+
+	SyncTasksTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{Name: "rag_sync_tasks_total", Help: "Incremental sync tasks by terminal state"},
+		[]string{"state"},
+	)
+	SyncDiffChunks = prometheus.NewCounterVec(
+		prometheus.CounterOpts{Name: "rag_sync_diff_chunks_total", Help: "Incremental sync chunk diff categories"},
+		[]string{"category"},
+	)
+	SyncChunksTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{Name: "rag_sync_chunks_total", Help: "Incremental sync chunk reconciliation counts"},
+		[]string{"action"},
+	)
+	SyncDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{Name: "rag_sync_duration_seconds", Help: "Incremental sync queue, processing, and promotion durations", Buckets: prometheus.DefBuckets},
+		[]string{"phase"},
+	)
+	SyncEventsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{Name: "rag_sync_events_total", Help: "Incremental sync submissions, retries, conflicts, and cleanup events"},
+		[]string{"event"},
+	)
 )
 
 func InitMetrics() {
@@ -153,6 +174,11 @@ func InitMetrics() {
 		AgentToolCallsTotal,
 		AgentToolLatency,
 		AgentTerminalTotal,
+		SyncTasksTotal,
+		SyncDiffChunks,
+		SyncChunksTotal,
+		SyncDuration,
+		SyncEventsTotal,
 	)
 }
 

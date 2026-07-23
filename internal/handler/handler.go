@@ -10,6 +10,7 @@ import (
 	"github.com/Wrath-y/local-rag/internal/management"
 	"github.com/Wrath-y/local-rag/internal/observe"
 	"github.com/Wrath-y/local-rag/internal/provider"
+	"github.com/Wrath-y/local-rag/internal/sourcesync"
 	"github.com/Wrath-y/local-rag/internal/store"
 )
 
@@ -24,6 +25,7 @@ type Deps struct {
 	LLM        provider.LLMProvider    // may be nil
 	Chunker    chunk.Chunker
 	Management *management.Service
+	Sync       *sourcesync.Service
 	// LoaderRegistry and FeishuResolver make input resolution explicit and
 	// replaceable in tests. A nil resolver safely rejects Feishu URLs.
 	LoaderRegistry *document.Registry
@@ -39,6 +41,7 @@ type Handler struct {
 	management       *management.Service
 	agent            agentState
 	ingestService    document.Service
+	syncService      *sourcesync.Service
 
 	// runtime toggleable state
 	rerankEnabled        bool
@@ -86,6 +89,16 @@ func New(deps Deps) *Handler {
 	h.ingestService = document.Service{
 		Registry: deps.LoaderRegistry,
 		Pipeline: document.PipelineFunc(h.ingestDocument),
+	}
+	if deps.Sync != nil {
+		h.syncService = deps.Sync
+	} else if deps.Stores != nil {
+		h.syncService = sourcesync.New(deps.Stores.Store(), deps.Chunker, deps.Embedder, deps.Config)
+	}
+	if h.syncService != nil && deps.Config != nil && deps.Config.Sync.Enabled {
+		if err := h.syncService.Start(); err != nil {
+			panic("start sync dispatcher: " + err.Error())
+		}
 	}
 	dims := 0
 	if deps.Config != nil {
