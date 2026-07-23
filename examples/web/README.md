@@ -26,6 +26,10 @@ python3 -m http.server 8080
 
 Open <http://127.0.0.1:8080>. The default API address is `http://127.0.0.1:8765`.
 
+Open <http://127.0.0.1:8080/agent-tool-test.html> to manually test Agent
+retrieval and the approval flow for knowledge-base ingest, source deletion, and
+index rebuild.
+
 ## Available actions
 
 | Page action | API endpoint |

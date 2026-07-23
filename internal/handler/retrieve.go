@@ -48,6 +48,10 @@ func (h *Handler) Retrieve(c *gin.Context) {
 // doRetrieveEvidence encapsulates ranked retrieval and deterministic evidence
 // assignment. Endpoint-specific callers own their request-scoped manifests.
 func (h *Handler) doRetrieveEvidence(text string, contextTokensUsed int) ([]citation.Evidence, error) {
+	return h.retrieveEvidence(context.Background(), text, contextTokensUsed, 0)
+}
+
+func (h *Handler) retrieveEvidence(ctx context.Context, text string, contextTokensUsed, forcedTopK int) ([]citation.Evidence, error) {
 	start := time.Now()
 	defer func() {
 		observe.RetrieveLatency.Observe(time.Since(start).Seconds())
@@ -57,6 +61,9 @@ func (h *Handler) doRetrieveEvidence(text string, contextTokensUsed int) ([]cita
 
 	// Dynamic top_k: reduce k when context window is nearly full.
 	topK := cfg.Retrieve.TopK
+	if forcedTopK > 0 {
+		topK = forcedTopK
+	}
 	if h.dynamicTopKEnabled && contextTokensUsed > 0 {
 		available := cfg.Retrieve.ContextWindow - cfg.Retrieve.ResponseReserve - contextTokensUsed
 		if available < 0 {
@@ -78,7 +85,7 @@ func (h *Handler) doRetrieveEvidence(text string, contextTokensUsed int) ([]cita
 		Reranker:      h.deps.Reranker,
 		RerankEnabled: h.rerankEnabled,
 		Stores:        h.deps.Stores.WithStore,
-	}).Retrieve(context.Background(), text, topK)
+	}).Retrieve(ctx, text, topK)
 	if err != nil {
 		return nil, err
 	}

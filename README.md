@@ -16,6 +16,8 @@
 
 🧪 [Retrieval evaluation](docs/retrieval-evaluation.md)
 
+🔧 [Agent tool loop boundary](docs/agent-tools.md)
+
 </div>
 
 ---
@@ -217,6 +219,27 @@ retrieve:
 storage:
   db_path: "data/rag.db"
 ```
+
+### Using OpenRouter
+
+OpenRouter uses the OpenAI-compatible Chat Completions API. Set the provider to
+`openrouter`; the endpoint is configured automatically:
+
+```yaml
+llm:
+  provider: "openrouter"
+  model: "openai/gpt-4.1-mini"
+  api_key_env: "OPENROUTER_API_KEY"
+```
+
+Export the API key before starting the server:
+
+```bash
+export OPENROUTER_API_KEY="sk-or-v1-..."
+```
+
+Use an OpenRouter model slug for `model` (for example,
+`anthropic/claude-sonnet-4` or `deepseek/deepseek-chat-v3-0324`).
 
 ### Using Third-Party Embedding API
 

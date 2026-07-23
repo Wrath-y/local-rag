@@ -61,6 +61,8 @@ func NewLLMProvider(cfg config.LLMConfig) (LLMProvider, error) {
 	switch cfg.Provider {
 	case "openai":
 		return NewOpenAILLMProvider("https://api.openai.com/v1", apiKey, cfg.Model, cfg.Timeout), nil
+	case "openrouter":
+		return NewOpenAILLMProvider("https://openrouter.ai/api/v1", apiKey, cfg.Model, cfg.Timeout), nil
 	case "anthropic":
 		return NewAnthropicProvider(apiKey, cfg.Model, cfg.Timeout), nil
 	default:

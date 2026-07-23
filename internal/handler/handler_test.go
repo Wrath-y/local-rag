@@ -240,6 +240,31 @@ func TestHealth_ReturnsOK(t *testing.T) {
 	}
 }
 
+func TestAgentCreateSession_InitializesFromStoreLifecycle(t *testing.T) {
+	st := newTestStore(t)
+	h := New(testDeps(t, st))
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodPost, "/agent/session", bytes.NewBufferString(`{"metadata":"{}"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.AgentCreateSession(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var response struct {
+		SessionID string `json:"session_id"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.SessionID == "" {
+		t.Fatal("response did not contain a session_id")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // TestRerankToggle
 // ---------------------------------------------------------------------------

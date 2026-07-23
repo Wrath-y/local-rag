@@ -2,6 +2,7 @@ package agent
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -18,6 +19,21 @@ type Session struct {
 // SessionManager manages agent sessions stored in SQLite.
 type SessionManager struct {
 	db *sql.DB
+}
+
+// ToolTrace contains privacy-minimized metadata for one tool attempt or a
+// terminal Agent outcome. Prompts and retrieved text are intentionally absent.
+type ToolTrace struct {
+	ID            int64         `json:"id"`
+	SessionID     string        `json:"session_id"`
+	CallID        string        `json:"call_id,omitempty"`
+	Tool          string        `json:"tool,omitempty"`
+	StartedAt     time.Time     `json:"started_at,omitempty"`
+	Duration      time.Duration `json:"duration"`
+	Outcome       string        `json:"outcome"`
+	ResultCount   int           `json:"result_count"`
+	EvidenceIDs   []int         `json:"evidence_ids,omitempty"`
+	ErrorCategory string        `json:"error_category,omitempty"`
 }
 
 // NewSessionManager creates a SessionManager and ensures schema exists.
@@ -45,9 +61,65 @@ CREATE TABLE IF NOT EXISTS messages (
     content    TEXT    NOT NULL,
     timestamp  INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS agent_tool_traces (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id     TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    call_id        TEXT NOT NULL DEFAULT '',
+    tool           TEXT NOT NULL DEFAULT '',
+    started_at     INTEGER NOT NULL,
+    duration_ms    INTEGER NOT NULL DEFAULT 0,
+    outcome        TEXT NOT NULL,
+    result_count   INTEGER NOT NULL DEFAULT 0,
+    evidence_ids   TEXT NOT NULL DEFAULT '[]',
+    error_category TEXT NOT NULL DEFAULT ''
+);
 `
 	_, err := sm.db.Exec(schema)
 	return err
+}
+
+// RecordToolTrace persists only diagnostic metadata. Failures are returned to
+// callers that need to surface storage errors without recording user content.
+func (sm *SessionManager) RecordToolTrace(trace ToolTrace) error {
+	startedAt := trace.StartedAt
+	if startedAt.IsZero() {
+		startedAt = time.Now()
+	}
+	evidenceIDs, err := json.Marshal(trace.EvidenceIDs)
+	if err != nil {
+		return fmt.Errorf("agent: marshal trace evidence IDs: %w", err)
+	}
+	_, err = sm.db.Exec(`INSERT INTO agent_tool_traces (session_id, call_id, tool, started_at, duration_ms, outcome, result_count, evidence_ids, error_category) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		trace.SessionID, trace.CallID, trace.Tool, startedAt.Unix(), trace.Duration.Milliseconds(), trace.Outcome, trace.ResultCount, string(evidenceIDs), trace.ErrorCategory)
+	if err != nil {
+		return fmt.Errorf("agent: record tool trace: %w", err)
+	}
+	return nil
+}
+
+// ListToolTraces returns safe diagnostic metadata for a session in call order.
+func (sm *SessionManager) ListToolTraces(sessionID string) ([]ToolTrace, error) {
+	rows, err := sm.db.Query(`SELECT id, session_id, call_id, tool, started_at, duration_ms, outcome, result_count, evidence_ids, error_category FROM agent_tool_traces WHERE session_id = ? ORDER BY id ASC`, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("agent: list tool traces: %w", err)
+	}
+	defer rows.Close()
+	var traces []ToolTrace
+	for rows.Next() {
+		var trace ToolTrace
+		var startedAt, durationMs int64
+		var evidenceIDs string
+		if err := rows.Scan(&trace.ID, &trace.SessionID, &trace.CallID, &trace.Tool, &startedAt, &durationMs, &trace.Outcome, &trace.ResultCount, &evidenceIDs, &trace.ErrorCategory); err != nil {
+			return nil, fmt.Errorf("agent: scan tool trace: %w", err)
+		}
+		trace.StartedAt, trace.Duration = time.Unix(startedAt, 0), time.Duration(durationMs)*time.Millisecond
+		if err := json.Unmarshal([]byte(evidenceIDs), &trace.EvidenceIDs); err != nil {
+			return nil, fmt.Errorf("agent: decode trace evidence IDs: %w", err)
+		}
+		traces = append(traces, trace)
+	}
+	return traces, rows.Err()
 }
 
 // Create inserts a new session and returns its ID.

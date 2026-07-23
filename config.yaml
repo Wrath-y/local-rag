@@ -6,38 +6,38 @@ embedding:
   query_prefix: "查询："
 
 chunk:
-  # 顶层分块策略选择器：
-  #   fixed     —— 句子级固定大小分块（默认，向后兼容）
-  #   structure —— 结构感知分块（Markdown 表格/代码块/列表原子完整）
-  #   semantic  —— 语义分块：基于 embedding 余弦相似度在语义断裂处切分
-  #   agentic   —— 由 LLM 智能分析文档结构并决定分块边界（成本较高，适合高价值文档）
+  # Top-level chunking strategy selector:
+  #   fixed     — sentence-level chunks of fixed size (default; backward compatible)
+  #   structure — structure-aware chunks that preserve Markdown tables, code blocks, and lists intact
+  #   semantic  — splits at semantic boundaries based on embedding cosine similarity
+  #   agentic   — uses an LLM to analyze document structure and choose chunk boundaries (higher cost; suited to high-value documents)
   strategy: "fixed"
   min_tokens: 200
   max_tokens: 400
-  structure_aware: true   # 当 strategy=fixed 时仍然控制是否对 Markdown 启用结构感知（向后兼容）
+  structure_aware: true   # When strategy=fixed, still controls whether structure awareness is enabled for Markdown (backward compatible)
   semantic:
-    enabled: false           # 是否启用语义分块（仅作为提示，最终以 strategy=semantic 为准）
-    threshold_percentile: 90 # 断裂阈值百分位：仅在相似度低于第 (100-N) 百分位处切分（越大越粗，90≈10%位置切）
-    min_chunk_size: 2        # 最小 chunk 包含句子数
-    max_chunk_size: 20       # 最大 chunk 包含句子数
+    enabled: false           # Enables semantic chunking as a hint; strategy=semantic ultimately takes precedence
+    threshold_percentile: 90 # Split only where similarity is below the (100-N)th percentile; higher values produce coarser chunks (90 ≈ split at the 10th percentile)
+    min_chunk_size: 2        # Minimum number of sentences per chunk
+    max_chunk_size: 20       # Maximum number of sentences per chunk
   agentic:
-    enabled: false              # 是否启用 agentic 分块（仅作提示，最终以 strategy=agentic 为准）
-    generate_summary: true      # 是否让 LLM 为每个 chunk 生成一句话摘要并附加为前缀
-    max_llm_input_tokens: 4000  # 单次发送给 LLM 的最大 token 数；超长文档按行分段调用
+    enabled: false              # Enables agentic chunking as a hint; strategy=agentic ultimately takes precedence
+    generate_summary: true      # Have the LLM generate and prepend a one-sentence summary for each chunk
+    max_llm_input_tokens: 4000  # Maximum tokens sent to the LLM per request; oversized documents are processed in line-based segments
   hierarchical:
-    enabled: false           # 默认关闭，开启后启用 Parent-Child 层次化分块
-    parent_max_tokens: 800   # parent chunk 的最大 token 数（child 用于检索，命中后返回 parent 给 LLM）
+    enabled: false           # Disabled by default; enables parent-child hierarchical chunking when true
+    parent_max_tokens: 800   # Maximum tokens per parent chunk (children are retrieved; the matched parent is returned to the LLM)
   context_prefix:
-    enabled: false           # 默认关闭；开启后将标题层级以面包屑形式附加到 chunk 文本之前
-    format: "breadcrumb"     # 前缀格式：当前仅支持 breadcrumb（形如 [A > B > C]）
-    max_depth: 3             # 最多传播的标题层级数（仅取栈尾 N 个标题）
+    enabled: false           # Disabled by default; prepends the heading hierarchy to chunk text as breadcrumbs when enabled
+    format: "breadcrumb"     # Prefix format; currently only breadcrumb is supported (for example, [A > B > C])
+    max_depth: 3             # Maximum number of heading levels to propagate (uses the last N headings in the stack)
 
 retrieve:
   top_k: 3
   verbose: true
-  dynamic_top_k: false     # 根据剩余上下文窗口自动调整 top_k
-  context_window: 180000   # 模型上下文窗口 token 数（保守值，预留 system prompt 开销）
-  response_reserve: 8000   # 为模型回复预留的 token 数
+  dynamic_top_k: false     # Automatically adjust top_k according to the remaining context window
+  context_window: 180000   # Model context-window size in tokens (conservative value that reserves room for the system prompt)
+  response_reserve: 8000   # Tokens reserved for the model response
 
 rerank:
   enabled: false
@@ -47,29 +47,38 @@ storage:
   index_path: "index.bin"
   texts_path: "chunks.pkl"
   wal:
-    enabled: true       # WAL 开关；false 时回退到无 replay 行为
-    max_size_mb: 10     # 超过此大小触发 checkpoint 并截断 WAL
+    enabled: true       # Enables WAL; false falls back to behavior without replay
+    max_size_mb: 10     # Trigger a checkpoint and truncate the WAL once it exceeds this size
   backup:
     enabled: true
-    schedule: "0 3 * * *"    # cron：每天本地时间 03:00 自动备份
+    schedule: "0 3 * * *"    # Cron: automatically back up daily at 03:00 local time
     retention:
-      days: 7                # 过去 N 天每天保留 1 份
-      weeks: 4               # 过去 M 周每周保留 1 份
+      days: 7                # Retain one backup per day for the past N days
+      weeks: 4               # Retain one backup per week for the past M weeks
 
 log:
-  lang: "en"   # 日志语言：zh（中文）或 en（English）
+  lang: "en"   # Log language: zh (Chinese) or en (English)
 
 server:
   port: 8765
 
 llm:
-  provider: "anthropic"            # openai | anthropic（或自定义注册的供应商名）
+  provider: "anthropic"            # openai | anthropic (or the name of a custom registered provider)
   model: "claude-sonnet-4-6"
-  api_key_env: "ANTHROPIC_API_KEY" # 从环境变量读取，不写死 key
+  api_key_env: "ANTHROPIC_API_KEY" # Read the API key from an environment variable; never hard-code it
   timeout: 30
   max_retries: 2
 
 query_rewrite:
   enabled: false
   strategy: "expansion"   # expansion | hyde | multi_query
-  provider: ""            # 留空则继承 llm.provider；可单独指定如 "openai"
+  provider: ""            # Empty inherits llm.provider; can be set independently, for example, "openai"
+
+# Agent v1 tool loop: only read-only rag_retrieve is registered.
+agent:
+  max_rounds: 4
+  max_tool_calls: 3
+  deadline_seconds: 20
+  max_context_bytes: 24000
+  max_result_bytes: 12000
+  max_top_k: 3

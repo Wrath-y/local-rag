@@ -32,6 +32,7 @@ type Handler struct {
 	hookObservations *observe.HookObservations
 	citations        *citation.Manager
 	management       *management.Service
+	agent            agentState
 
 	// runtime toggleable state
 	rerankEnabled        bool

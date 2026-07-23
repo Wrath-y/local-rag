@@ -9,16 +9,17 @@ import (
 
 // Config is the top-level configuration structure.
 type Config struct {
-	Server       ServerConfig      `yaml:"server"`
-	Embedding    EmbeddingConfig   `yaml:"embedding"`
-	Rerank       RerankConfig      `yaml:"rerank"`
-	LLM          LLMConfig         `yaml:"llm"`
-	Chunk        ChunkConfig       `yaml:"chunk"`
-	Retrieve     RetrieveConfig    `yaml:"retrieve"`
+	Server       ServerConfig       `yaml:"server"`
+	Embedding    EmbeddingConfig    `yaml:"embedding"`
+	Rerank       RerankConfig       `yaml:"rerank"`
+	LLM          LLMConfig          `yaml:"llm"`
+	Chunk        ChunkConfig        `yaml:"chunk"`
+	Retrieve     RetrieveConfig     `yaml:"retrieve"`
 	QueryRewrite QueryRewriteConfig `yaml:"query_rewrite"`
-	Storage      StorageConfig     `yaml:"storage"`
-	Sidecar      SidecarConfig     `yaml:"sidecar"`
-	Log          LogConfig         `yaml:"log"`
+	Agent        AgentConfig        `yaml:"agent"`
+	Storage      StorageConfig      `yaml:"storage"`
+	Sidecar      SidecarConfig      `yaml:"sidecar"`
+	Log          LogConfig          `yaml:"log"`
 }
 
 // ServerConfig holds HTTP server settings.
@@ -114,6 +115,17 @@ type QueryRewriteConfig struct {
 	Enabled  bool   `yaml:"enabled"`
 	Strategy string `yaml:"strategy"`
 	Provider string `yaml:"provider"`
+}
+
+// AgentConfig bounds the v1 read-only tool loop. Values are deliberately
+// conservative defaults and can be tuned after production latency data.
+type AgentConfig struct {
+	MaxRounds       int `yaml:"max_rounds"`
+	MaxToolCalls    int `yaml:"max_tool_calls"`
+	DeadlineSeconds int `yaml:"deadline_seconds"`
+	MaxContextBytes int `yaml:"max_context_bytes"`
+	MaxResultBytes  int `yaml:"max_result_bytes"`
+	MaxTopK         int `yaml:"max_top_k"`
 }
 
 // StorageConfig holds persistence settings.
@@ -272,6 +284,26 @@ func applyDefaults(cfg *Config) {
 	// QueryRewrite
 	if cfg.QueryRewrite.Strategy == "" {
 		cfg.QueryRewrite.Strategy = "expansion"
+	}
+
+	// Agent tool loop
+	if cfg.Agent.MaxRounds == 0 {
+		cfg.Agent.MaxRounds = 4
+	}
+	if cfg.Agent.MaxToolCalls == 0 {
+		cfg.Agent.MaxToolCalls = 3
+	}
+	if cfg.Agent.DeadlineSeconds == 0 {
+		cfg.Agent.DeadlineSeconds = 20
+	}
+	if cfg.Agent.MaxContextBytes == 0 {
+		cfg.Agent.MaxContextBytes = 24000
+	}
+	if cfg.Agent.MaxResultBytes == 0 {
+		cfg.Agent.MaxResultBytes = 12000
+	}
+	if cfg.Agent.MaxTopK == 0 {
+		cfg.Agent.MaxTopK = 3
 	}
 
 	// Storage

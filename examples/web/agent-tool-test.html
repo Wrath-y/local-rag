@@ -1,0 +1,21 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Agent Tool Test</title>
+<style>body{max-width:760px;margin:30px auto;font:16px sans-serif}input,textarea,button{box-sizing:border-box;margin:6px 0;padding:8px;width:100%}textarea{height:130px}button{width:auto}pre{white-space:pre-wrap;background:#eee;padding:12px}#approval{display:none}</style>
+<h1>Agent knowledge-base tool test</h1>
+<label>API <input id="api" value="http://127.0.0.1:8765"></label>
+<button onclick="session()">Create session</button>
+<label>Session ID <input id="sid" readonly></label>
+<label>Message <textarea id="message" placeholder="Example: Add this text to source demo: Redis is an in-memory data store."></textarea></label>
+<button onclick="chat()">Send to agent</button>
+<div id="approval"><p id="request"></p><button onclick="approve(true)">Approve edit</button> <button onclick="approve(false)">Reject edit</button></div>
+<pre id="out">Create a session, then send a message.</pre>
+<script>
+let token;
+const base=()=>document.querySelector('#api').value.replace(/\/$/,'');
+const show=x=>document.querySelector('#out').textContent=JSON.stringify(x,null,2);
+async function call(path,body){let r=await fetch(base()+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});let x=await r.json();show(x);if(!r.ok)throw x;return x}
+async function session(){let x=await call('/agent/session',{});sid.value=x.session_id}
+async function chat(){if(!sid.value)return alert('Create a session first');let x=await call('/agent/chat',{session_id:sid.value,message:message.value});let p=x.permission_request;token=p&&p.token;approval.style.display=token?'block':'none';request.textContent=token?`Agent requests permission to ${p.operation} (${p.tool}). Expires: ${p.expires_at}`:''}
+async function approve(approved){if(!token)return;await call('/agent/permission/'+token,{session_id:sid.value,approved});token=null;approval.style.display='none'}
+</script>

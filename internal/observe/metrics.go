@@ -114,6 +114,21 @@ var (
 	HookLatency = prometheus.NewHistogram(
 		prometheus.HistogramOpts{Name: "rag_hook_latency_seconds", Help: "RAG hook attempt latency", Buckets: prometheus.DefBuckets},
 	)
+
+	AgentToolCallsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{Name: "rag_agent_tool_calls_total", Help: "Agent tool calls by tool, outcome, and safe error category"},
+		[]string{"tool", "outcome", "error_category"},
+	)
+
+	AgentToolLatency = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{Name: "rag_agent_tool_latency_seconds", Help: "Agent tool execution latency", Buckets: prometheus.DefBuckets},
+		[]string{"tool"},
+	)
+
+	AgentTerminalTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{Name: "rag_agent_terminal_total", Help: "Agent requests by terminal outcome"},
+		[]string{"outcome"},
+	)
 )
 
 func InitMetrics() {
@@ -135,6 +150,9 @@ func InitMetrics() {
 		IndexRebuildActive,
 		HookOutcomesTotal,
 		HookLatency,
+		AgentToolCallsTotal,
+		AgentToolLatency,
+		AgentTerminalTotal,
 	)
 }
 

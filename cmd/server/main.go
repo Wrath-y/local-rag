@@ -162,6 +162,7 @@ func main() {
 
 	// Agent routes.
 	r.POST("/agent/chat", h.AgentChat)
+	r.POST("/agent/permission/:token", h.AgentApprovePermission)
 	r.POST("/agent/session", h.AgentCreateSession)
 	r.GET("/agent/sessions", h.AgentListSessions)
 	r.DELETE("/agent/session/:id", h.AgentDeleteSession)

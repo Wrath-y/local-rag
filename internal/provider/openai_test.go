@@ -6,7 +6,37 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/Wrath-y/local-rag/internal/config"
 )
+
+func TestNewLLMProvider_OpenRouter(t *testing.T) {
+	t.Setenv("OPENROUTER_API_KEY", "test-key")
+
+	llm, err := NewLLMProvider(config.LLMConfig{
+		Provider:  "openrouter",
+		Model:     "openai/gpt-4.1-mini",
+		APIKeyEnv: "OPENROUTER_API_KEY",
+		Timeout:   30,
+	})
+	if err != nil {
+		t.Fatalf("NewLLMProvider returned error: %v", err)
+	}
+
+	p, ok := llm.(*OpenAILLMProvider)
+	if !ok {
+		t.Fatalf("NewLLMProvider returned %T, want *OpenAILLMProvider", llm)
+	}
+	if p.baseURL != "https://openrouter.ai/api/v1" {
+		t.Errorf("baseURL = %q, want %q", p.baseURL, "https://openrouter.ai/api/v1")
+	}
+	if p.apiKey != "test-key" {
+		t.Errorf("apiKey = %q, want %q", p.apiKey, "test-key")
+	}
+	if p.model != "openai/gpt-4.1-mini" {
+		t.Errorf("model = %q, want %q", p.model, "openai/gpt-4.1-mini")
+	}
+}
 
 // ---------------------------------------------------------------------------
 // OpenAIEmbedProvider tests
@@ -164,6 +194,33 @@ func TestOpenAILLM_EmptyChoices(t *testing.T) {
 	_, err := p.Complete(context.Background(), []Message{{Role: "user", Content: "hi"}})
 	if err == nil {
 		t.Fatal("expected error for empty choices, got nil")
+	}
+}
+
+func TestOpenAILLM_CompleteWithTools(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Tools []struct {
+				Type     string `json:"type"`
+				Function struct {
+					Name string `json:"name"`
+				} `json:"function"`
+			} `json:"tools"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatal(err)
+		}
+		if len(req.Tools) != 1 || req.Tools[0].Type != "function" || req.Tools[0].Function.Name != "rag_retrieve" {
+			t.Fatalf("unexpected native tools request: %#v", req.Tools)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"","tool_calls":[{"id":"call-1","type":"function","function":{"name":"rag_retrieve","arguments":"{\"query\":\"redis\"}"}}]}}]}`))
+	}))
+	defer srv.Close()
+	p := NewOpenAILLMProvider(srv.URL, "key", "model", 30)
+	completion, err := p.CompleteWithTools(context.Background(), []Message{{Role: "user", Content: "find redis"}}, []ToolDefinition{{Name: "rag_retrieve", InputSchema: json.RawMessage(`{"type":"object"}`)}})
+	if err != nil || len(completion.ToolCalls) != 1 || completion.ToolCalls[0].Name != "rag_retrieve" || string(completion.ToolCalls[0].Arguments) != `{"query":"redis"}` {
+		t.Fatalf("completion=%#v err=%v", completion, err)
 	}
 }
 

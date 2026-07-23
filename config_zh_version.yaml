@@ -1,0 +1,75 @@
+model:
+  name: "BAAI/bge-small-zh-v1.5"
+
+embedding:
+  doc_prefix: "段落："
+  query_prefix: "查询："
+
+chunk:
+  # 顶层分块策略选择器：
+  #   fixed     —— 句子级固定大小分块（默认，向后兼容）
+  #   structure —— 结构感知分块（Markdown 表格/代码块/列表原子完整）
+  #   semantic  —— 语义分块：基于 embedding 余弦相似度在语义断裂处切分
+  #   agentic   —— 由 LLM 智能分析文档结构并决定分块边界（成本较高，适合高价值文档）
+  strategy: "fixed"
+  min_tokens: 200
+  max_tokens: 400
+  structure_aware: true   # 当 strategy=fixed 时仍然控制是否对 Markdown 启用结构感知（向后兼容）
+  semantic:
+    enabled: false           # 是否启用语义分块（仅作为提示，最终以 strategy=semantic 为准）
+    threshold_percentile: 90 # 断裂阈值百分位：仅在相似度低于第 (100-N) 百分位处切分（越大越粗，90≈10%位置切）
+    min_chunk_size: 2        # 最小 chunk 包含句子数
+    max_chunk_size: 20       # 最大 chunk 包含句子数
+  agentic:
+    enabled: false              # 是否启用 agentic 分块（仅作提示，最终以 strategy=agentic 为准）
+    generate_summary: true      # 是否让 LLM 为每个 chunk 生成一句话摘要并附加为前缀
+    max_llm_input_tokens: 4000  # 单次发送给 LLM 的最大 token 数；超长文档按行分段调用
+  hierarchical:
+    enabled: false           # 默认关闭，开启后启用 Parent-Child 层次化分块
+    parent_max_tokens: 800   # parent chunk 的最大 token 数（child 用于检索，命中后返回 parent 给 LLM）
+  context_prefix:
+    enabled: false           # 默认关闭；开启后将标题层级以面包屑形式附加到 chunk 文本之前
+    format: "breadcrumb"     # 前缀格式：当前仅支持 breadcrumb（形如 [A > B > C]）
+    max_depth: 3             # 最多传播的标题层级数（仅取栈尾 N 个标题）
+
+retrieve:
+  top_k: 3
+  verbose: true
+  dynamic_top_k: false     # 根据剩余上下文窗口自动调整 top_k
+  context_window: 180000   # 模型上下文窗口 token 数（保守值，预留 system prompt 开销）
+  response_reserve: 8000   # 为模型回复预留的 token 数
+
+rerank:
+  enabled: false
+  model: "BAAI/bge-reranker-base"
+
+storage:
+  index_path: "index.bin"
+  texts_path: "chunks.pkl"
+  wal:
+    enabled: true       # WAL 开关；false 时回退到无 replay 行为
+    max_size_mb: 10     # 超过此大小触发 checkpoint 并截断 WAL
+  backup:
+    enabled: true
+    schedule: "0 3 * * *"    # cron：每天本地时间 03:00 自动备份
+    retention:
+      days: 7                # 过去 N 天每天保留 1 份
+      weeks: 4               # 过去 M 周每周保留 1 份
+
+log:
+  lang: "en"   # 日志语言：zh（中文）或 en（English）
+
+server:
+  port: 8765
+
+llm:
+  provider: "anthropic"            # openai | anthropic（或自定义注册的供应商名）
+  model: "claude-sonnet-4-6"
+  api_key_env: "ANTHROPIC_API_KEY" # 从环境变量读取，不写死 key
+  timeout: 30
+  max_retries: 2
+
+query_rewrite:
+  enabled: false
+  strategy: "expansion"   # expansion | hyde | multi_query
+  provider: ""            # 留空则继承 llm.provider；可单独指定如 "openai"

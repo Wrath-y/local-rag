@@ -14,6 +14,10 @@
 
 📖 [English](README.md)
 
+🧪 [检索评估](docs/retrieval-evaluation.md)
+
+🔧 [Agent 工具循环边界](docs/agent-tools.md)
+
 </div>
 
 ---
@@ -95,6 +99,33 @@ RAG server started (PID: xxxxx) at http://127.0.0.1:8765
 `citations` 与 `evidence_token`；可将最终回答提交至
 `POST /citations/validate`，校验有效、伪造或缺失的引用。完整字段、时效及不确定性
 处理方式见 [引用契约](CITATIONS.md)。
+
+### 🤖 Agent 按需检索
+
+`POST /agent/chat` 支持让模型在回答前按需调用知识库。可直接执行只读
+`rag_retrieve`；`rag_ingest`、`rag_delete_source` 和 `rag_index_rebuild` 在模型请求后
+会先返回一次性授权提示。不会执行 shell、HTTP、任意文件写入或其他未注册工具。
+
+先创建会话：
+
+```bash
+curl -X POST http://127.0.0.1:8765/agent/session
+```
+
+再携带返回的 `session_id` 发起对话：
+
+```bash
+curl -X POST http://127.0.0.1:8765/agent/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"session_id":"<session_id>","message":"Redis 缓存穿透怎么处理？"}'
+```
+
+响应会包含 `outcome`、`citations`、`evidence_token` 和
+`citation_validation`。工具调用受到轮次、调用次数、截止时间、上下文与结果大小
+限制；写操作会返回 `permission_request.token`，由用户选择后调用
+`POST /agent/permission/:token`（请求体包含 `session_id` 和 `approved`）执行或拒绝。
+令牌会话绑定、一次性且五分钟后失效。完整契约和 provider 回退行为见
+[Agent 工具循环边界](docs/agent-tools.md)。
 
 ### ⚡ 自动检索模式
 
@@ -233,10 +264,40 @@ retrieve:
     vector: 0.7               # 向量得分权重
     bm25: 0.3                 # 关键词得分权重
 
+# Agent 工具循环：写操作需要用户一次性授权
+agent:
+  max_rounds: 4
+  max_tool_calls: 3
+  deadline_seconds: 20
+  max_context_bytes: 24000
+  max_result_bytes: 12000
+  max_top_k: 3
+
 # 存储
 storage:
   db_path: "data/rag.db"
 ```
+
+### 使用 OpenRouter
+
+OpenRouter 兼容 OpenAI Chat Completions API。将 provider 设为 `openrouter`
+即可，服务会自动使用对应的 API 地址：
+
+```yaml
+llm:
+  provider: "openrouter"
+  model: "openai/gpt-4.1-mini"
+  api_key_env: "OPENROUTER_API_KEY"
+```
+
+启动服务前导出 API Key：
+
+```bash
+export OPENROUTER_API_KEY="sk-or-v1-..."
+```
+
+`model` 请填写 OpenRouter 的模型 slug，例如 `anthropic/claude-sonnet-4` 或
+`deepseek/deepseek-chat-v3-0324`。
 
 ### 使用第三方 Embedding API
 
@@ -378,6 +439,10 @@ curl http://127.0.0.1:8765/health
 # Prometheus 指标
 curl http://127.0.0.1:8765/metrics
 ```
+
+Agent 工具循环额外暴露 `rag_agent_tool_calls_total`、
+`rag_agent_tool_latency_seconds` 和 `rag_agent_terminal_total`。持久化 trace 仅保留
+工具名称、耗时、结果数、证据 ID 与安全错误类别，不保存提示词或检索正文。
 
 ---
 

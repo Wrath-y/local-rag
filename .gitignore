@@ -39,6 +39,7 @@ docs/*
 !docs/diagrams.md
 !docs/retrieval-evaluation.md
 !docs/CITATIONS.md
+!docs/agent-tools.md
 openspec
 
 # Go build artifacts

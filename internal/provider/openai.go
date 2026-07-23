@@ -239,3 +239,89 @@ func (p *OpenAILLMProvider) Complete(ctx context.Context, messages []Message) (s
 	}
 	return result.Choices[0].Message.Content, nil
 }
+
+// CompleteWithTools uses OpenAI-compatible native function tools. The Agent
+// still validates every returned call before it can reach an executor.
+func (p *OpenAILLMProvider) CompleteWithTools(ctx context.Context, messages []Message, tools []ToolDefinition) (Completion, error) {
+	type functionCall struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	}
+	type toolCall struct {
+		ID       string       `json:"id"`
+		Type     string       `json:"type"`
+		Function functionCall `json:"function"`
+	}
+	type message struct {
+		Role       string     `json:"role"`
+		Content    string     `json:"content,omitempty"`
+		ToolCallID string     `json:"tool_call_id,omitempty"`
+		ToolCalls  []toolCall `json:"tool_calls,omitempty"`
+	}
+	type functionTool struct {
+		Name        string          `json:"name"`
+		Description string          `json:"description"`
+		Parameters  json.RawMessage `json:"parameters"`
+	}
+	type tool struct {
+		Type     string       `json:"type"`
+		Function functionTool `json:"function"`
+	}
+	requestMessages := make([]message, 0, len(messages))
+	for _, input := range messages {
+		output := message{Role: input.Role, Content: input.Content, ToolCallID: input.ToolCallID}
+		for _, call := range input.ToolCalls {
+			output.ToolCalls = append(output.ToolCalls, toolCall{ID: call.ID, Type: "function", Function: functionCall{Name: call.Name, Arguments: string(call.Arguments)}})
+		}
+		requestMessages = append(requestMessages, output)
+	}
+	requestTools := make([]tool, 0, len(tools))
+	for _, definition := range tools {
+		requestTools = append(requestTools, tool{Type: "function", Function: functionTool{Name: definition.Name, Description: definition.Description, Parameters: definition.InputSchema}})
+	}
+	body, err := json.Marshal(struct {
+		Model    string    `json:"model"`
+		Messages []message `json:"messages"`
+		Tools    []tool    `json:"tools"`
+	}{p.model, requestMessages, requestTools})
+	if err != nil {
+		return Completion{}, fmt.Errorf("openai tools: marshal request: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return Completion{}, fmt.Errorf("openai tools: build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return Completion{}, fmt.Errorf("openai tools: http: %w", err)
+	}
+	defer resp.Body.Close()
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return Completion{}, fmt.Errorf("openai tools: read body: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return Completion{}, fmt.Errorf("openai tools: API returned %d: %s", resp.StatusCode, responseBody)
+	}
+	var response struct {
+		Choices []struct {
+			Message struct {
+				Content   string     `json:"content"`
+				ToolCalls []toolCall `json:"tool_calls"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(responseBody, &response); err != nil {
+		return Completion{}, fmt.Errorf("openai tools: unmarshal response: %w", err)
+	}
+	if len(response.Choices) == 0 {
+		return Completion{}, fmt.Errorf("openai tools: no choices in response")
+	}
+	completion := Completion{Content: response.Choices[0].Message.Content}
+	for _, call := range response.Choices[0].Message.ToolCalls {
+		completion.ToolCalls = append(completion.ToolCalls, ToolCall{ID: call.ID, Name: call.Function.Name, Arguments: json.RawMessage(call.Function.Arguments)})
+	}
+	return completion, nil
+}
