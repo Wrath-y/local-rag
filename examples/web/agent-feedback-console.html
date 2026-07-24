@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>本地 Agent 反馈控制台</title>
+  <style>
+    :root { color-scheme: dark; --bg:#101114; --panel:#191b20; --panel2:#22252d; --line:#343943; --text:#edf0f5; --muted:#a6adbb; --accent:#80b4ff; --ok:#69d39d; --warn:#ffd477; --danger:#ff8f96; }
+    * { box-sizing:border-box; } body { margin:0; min-width:0; background:var(--bg); color:var(--text); font:14px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    button,input,textarea { font:inherit; } button { border:0; border-radius:8px; padding:9px 12px; cursor:pointer; color:var(--text); background:#373c47; } button:hover:not(:disabled) { background:#4a5160; } button:disabled { cursor:not-allowed; opacity:.5; } button.primary { color:#07111f; background:var(--accent); font-weight:700; } button.danger { background:#74343d; } button.link { padding:4px 0; background:none; color:var(--accent); text-align:left; }
+    input,textarea { width:100%; border:1px solid var(--line); border-radius:8px; padding:9px; background:#101216; color:var(--text); } textarea { min-height:76px; resize:vertical; }
+    .app { min-height:100vh; display:grid; grid-template-columns:248px minmax(380px,1fr) 330px; }
+    .rail,.side { background:var(--panel); padding:16px; overflow:auto; } .rail { border-right:1px solid var(--line); } .side { border-left:1px solid var(--line); }
+    h1,h2,h3,p { margin:0; } h1 { font-size:17px; } h2 { font-size:14px; } h3 { font-size:13px; } .muted,.hint { color:var(--muted); font-size:12px; } .hint { margin-top:7px; }
+    .stack { display:grid; gap:10px; } .section { display:grid; gap:9px; margin-top:18px; } .row { display:flex; align-items:center; gap:8px; } .between { justify-content:space-between; }
+    .brand { display:flex; gap:9px; align-items:center; } .dot { width:11px; height:11px; border-radius:50%; background:var(--ok); box-shadow:0 0 16px var(--ok); }
+    .session { display:grid; gap:3px; width:100%; padding:10px; text-align:left; background:transparent; border:1px solid transparent; overflow:hidden; } .session.active { background:var(--panel2); border-color:#4d5564; } .session code { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--muted); }
+    .main { min-width:0; display:grid; grid-template-rows:auto minmax(0,1fr) auto; background:linear-gradient(145deg,#14161a,#111216 60%); }
+    .topbar { padding:15px 20px; border-bottom:1px solid var(--line); } .topbar strong { display:block; }
+    #transcript { min-height:0; overflow:auto; padding:22px clamp(16px,4vw,52px); display:grid; align-content:start; gap:14px; }
+    .card { max-width:860px; padding:13px 15px; border:1px solid var(--line); border-radius:12px; background:var(--panel); white-space:pre-wrap; overflow-wrap:anywhere; } .card.user { justify-self:end; background:#1e3455; border-color:#345884; } .card.system { border-left:3px solid var(--accent); } .card.error { border-left:3px solid var(--danger); } .card.approval { border-left:3px solid var(--warn); } .card .meta { display:block; margin-bottom:5px; color:var(--muted); font-size:12px; }
+    .composer { padding:15px clamp(16px,4vw,52px) 20px; border-top:1px solid var(--line); background:#15171c; } .composer textarea { min-height:48px; max-height:160px; } .composer .actions { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:8px; }
+    .citation { padding:10px; border:1px solid var(--line); border-radius:9px; background:#14161b; } .citation p { margin-top:5px; color:var(--muted); font-size:12px; display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; overflow:hidden; }
+    .notice { padding:10px; border-radius:8px; background:#172237; color:#c7ddff; font-size:12px; } .status { min-height:20px; color:var(--muted); font-size:12px; } .status.error { color:var(--danger); } .status.ok { color:var(--ok); }
+    .checks { display:grid; gap:7px; max-height:185px; overflow:auto; } .checks label { display:flex; gap:8px; align-items:flex-start; color:var(--muted); font-size:12px; } .checks input { width:auto; margin-top:3px; }
+    .approval-actions,.feedback-actions { display:flex; flex-wrap:wrap; gap:8px; } .api { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; }
+    @media (max-width: 980px) { .app { grid-template-columns:205px minmax(0,1fr); } .side { grid-column:1 / -1; border-left:0; border-top:1px solid var(--line); display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; } .side .section { margin-top:0; } }
+    @media (max-width: 650px) { .app { display:block; } .rail { border-right:0; border-bottom:1px solid var(--line); } .rail .section { margin-top:12px; } .main { min-height:68vh; } .side { display:block; } .side .section + .section { margin-top:18px; } #transcript { padding:16px; } .composer { padding:12px 16px 16px; } }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="rail">
+      <div class="brand"><span class="dot"></span><div><h1>本地 Agent</h1><div class="muted">对话与反馈控制台</div></div></div>
+      <div class="section"><button id="new-session" class="primary">＋ 新建对话</button><button id="refresh-sessions">刷新服务端会话</button></div>
+      <div class="section"><h2>服务端会话</h2><div id="sessions" class="stack"><span class="muted">正在读取…</span></div><p class="hint">选择会话只会继续服务端上下文；本页不会恢复先前的可视化聊天记录。</p></div>
+      <div class="section"><label class="muted" for="api-base">API 地址</label><input id="api-base" class="api" value="http://127.0.0.1:8765" spellcheck="false"><p class="hint">修改后用于后续请求。</p></div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar"><strong id="title">尚未选择会话</strong><span id="session-state" class="muted">创建或选择会话后开始。</span></header>
+      <section id="transcript" aria-live="polite"><article class="card system"><span class="meta">系统</span>欢迎。输入问题后，Agent 会在当前服务端会话中继续处理；此页的显示记录仅保存在当前浏览器内存中。</article></section>
+      <form id="composer" class="composer"><textarea id="message" placeholder="输入消息，Enter 发送，Shift+Enter 换行" aria-label="消息内容"></textarea><div class="actions"><span id="chat-status" class="status">准备就绪</span><button id="send" class="primary" type="submit">发送</button></div></form>
+    </main>
+
+    <aside class="side">
+      <section class="section"><h2>最新证据</h2><div id="evidence" class="stack"><p class="muted">发送一条获得证据的回答后，引文会显示在这里。</p></div></section>
+      <section class="section"><h2>回答反馈</h2><p class="notice">反馈仅记录为本地离线复核资料，不会自动改变检索、索引或后续回答。</p><div id="feedback" class="stack"><p class="muted">尚无可反馈的回答。</p></div><div id="feedback-status" class="status" aria-live="polite"></div></section>
+    </aside>
+  </div>
+
+  <script>
+  (() => {
+    const byId = id => document.getElementById(id);
+    const state = { sessionId: "", busy: false, permission: null, latest: null };
+    const transcript = byId("transcript"), sessions = byId("sessions"), evidence = byId("evidence"), feedback = byId("feedback");
+    const base = () => byId("api-base").value.trim().replace(/\/$/, "");
+    const setStatus = (id, message, type = "") => { const node = byId(id); node.textContent = message; node.className = "status " + type; };
+    const clear = node => { while (node.firstChild) node.removeChild(node.firstChild); };
+    const button = (text, className = "") => { const node = document.createElement("button"); node.type = "button"; node.textContent = text; node.className = className; return node; };
+    const addCard = (kind, text, title) => { const card = document.createElement("article"); card.className = "card " + kind; const meta = document.createElement("span"); meta.className = "meta"; meta.textContent = title; const content = document.createElement("div"); content.textContent = text; card.append(meta, content); transcript.append(card); transcript.scrollTop = transcript.scrollHeight; return card; };
+    const errorText = (prefix, err) => `${prefix}: ${err.message || String(err)}`;
+    async function request(path, options = {}) {
+      if (!base()) throw new Error("请填写 API 地址");
+      let response;
+      try { response = await fetch(base() + path, { method: options.method || "GET", headers: options.body ? { "Content-Type": "application/json" } : {}, body: options.body ? JSON.stringify(options.body) : undefined }); }
+      catch (err) { throw new Error("网络请求失败（请检查 API 地址、服务和 CORS）：" + err.message); }
+      const text = await response.text(); let data = {};
+      try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { raw: text }; }
+      if (!response.ok) throw new Error(`${response.status} ${data.error || data.raw || response.statusText}`);
+      return data;
+    }
+    function updateTitle() { byId("title").textContent = state.sessionId ? "当前会话" : "尚未选择会话"; byId("session-state").textContent = state.sessionId ? state.sessionId : "创建或选择会话后开始。"; }
+    function setBusy(value) { state.busy = value; byId("send").disabled = value || Boolean(state.permission); byId("message").disabled = value || Boolean(state.permission); }
+    async function refreshSessions() {
+      sessions.textContent = "正在读取…";
+      try {
+        const data = await request("/agent/sessions"); clear(sessions);
+        if (!(data.sessions || []).length) { sessions.textContent = "没有服务端会话。"; return; }
+        data.sessions.forEach(item => { const node = button("", "session" + (item.id === state.sessionId ? " active" : "")); const when = item.created_at ? new Date(item.created_at * 1000).toLocaleString() : ""; node.innerHTML = ""; const label = document.createElement("strong"); label.textContent = when || "会话"; const id = document.createElement("code"); id.textContent = item.id; node.append(label, id); node.onclick = () => { state.sessionId = item.id; state.latest = null; state.permission = null; updateTitle(); renderEvidence(); renderFeedback(); setBusy(false); addCard("system", "已切换为继续服务端上下文。此页面不会恢复该会话的历史显示记录。", "系统"); refreshSessions(); }; sessions.append(node); });
+      } catch (err) { sessions.textContent = "会话读取失败：" + err.message; }
+    }
+    async function newSession() {
+      try { const data = await request("/agent/session", { method: "POST", body: { metadata: "{}" } }); state.sessionId = data.session_id; state.latest = null; state.permission = null; updateTitle(); renderEvidence(); renderFeedback(); addCard("system", "已创建新的服务端会话。", "系统"); await refreshSessions(); }
+      catch (err) { addCard("error", errorText("无法创建会话", err), "错误"); }
+    }
+    function renderEvidence() {
+      clear(evidence); const citations = state.latest && state.latest.citations || [];
+      if (!citations.length) { evidence.textContent = "最新回答没有返回证据。"; evidence.className = "muted"; return; }
+      evidence.className = "stack";
+      citations.forEach((item, index) => { const node = document.createElement("article"); node.className = "citation"; const title = document.createElement("strong"); title.textContent = `${item.label || "[" + (index + 1) + "]"} ${item.title || item.source || "未命名来源"}`; const where = document.createElement("div"); where.className = "muted"; where.textContent = item.location || item.uri || item.source || ""; const excerpt = document.createElement("p"); excerpt.textContent = item.excerpt || "没有可显示的摘录"; node.append(title, where, excerpt); evidence.append(node); });
+    }
+    function renderFeedback() {
+      clear(feedback); setStatus("feedback-status", ""); const latest = state.latest; const citations = latest && latest.citations || []; const durable = citations.filter(item => item.citation_id); const eligible = latest && latest.retrieval_id && durable.length === citations.length && citations.length > 0;
+      if (!latest) { feedback.textContent = "尚无可反馈的回答。"; feedback.className = "muted"; return; }
+      if (!eligible) { const note = document.createElement("p"); note.className = "muted"; note.textContent = latest.feedbackRejected ? "反馈服务不可用或已拒绝本次请求；请检查服务器配置。" : "此回答没有可用的持久反馈标识（可能没有证据，或服务器已关闭反馈记录）。"; feedback.append(note); return; }
+      const id = document.createElement("div"); id.className = "hint"; id.textContent = "检索记录：" + latest.retrieval_id; feedback.append(id);
+      const actions = document.createElement("div"); actions.className = "feedback-actions"; const helpful = button("有帮助", "primary"), unhelpful = button("没帮助"); helpful.onclick = () => submitFeedback("helpful"); unhelpful.onclick = () => submitFeedback("unhelpful"); actions.append(helpful, unhelpful); feedback.append(actions);
+      const heading = document.createElement("h3"); heading.textContent = "报告引文问题"; feedback.append(heading);
+      const checks = document.createElement("div"); checks.className = "checks"; durable.forEach((item, i) => { const label = document.createElement("label"); const check = document.createElement("input"); check.type = "checkbox"; check.value = item.citation_id; check.dataset.citation = "true"; const text = document.createElement("span"); text.textContent = `${item.label || "[" + (i + 1) + "]"} ${item.source || item.title || "来源"}`; label.append(check, text); checks.append(label); }); feedback.append(checks);
+      const note = document.createElement("textarea"); note.id = "feedback-note"; note.maxLength = 256; note.placeholder = "可选说明（最多 256 字）"; feedback.append(note); const report = button("提交所选引文问题"); report.onclick = () => submitFeedback("citation-error"); feedback.append(report);
+    }
+    async function submitFeedback(kind) {
+      const latest = state.latest; if (!latest || !latest.retrieval_id) return;
+      const citationIDs = Array.from(feedback.querySelectorAll("input[data-citation]:checked"), node => node.value);
+      if (kind === "citation-error" && !citationIDs.length) { setStatus("feedback-status", "请至少选择一条引文。", "error"); return; }
+      const note = byId("feedback-note"); const body = { retrieval_id: latest.retrieval_id, session_id: state.sessionId, kind };
+      if (citationIDs.length) body.citation_ids = citationIDs; if (note && note.value.trim()) body.note = note.value.trim();
+      setStatus("feedback-status", "正在记录反馈…");
+      try { const result = await request("/feedback", { method: "POST", body }); setStatus("feedback-status", `已记录：${result.feedback && result.feedback.feedback_id || "成功"}`, "ok"); }
+      catch (err) { latest.feedbackRejected = true; renderFeedback(); setStatus("feedback-status", "反馈未记录：" + err.message, "error"); }
+    }
+    function renderApproval(permission) {
+      const card = addCard("approval", "", "需要人工批准"); const safe = document.createElement("p"); safe.textContent = `Agent 请求执行：${permission.operation || "受保护操作"}\n工具：${permission.tool || "未提供"}\n到期：${permission.expires_at || "未提供"}\n不会显示或发送工具参数。`; const actions = document.createElement("div"); actions.className = "approval-actions"; const approve = button("批准并执行", "primary"), reject = button("拒绝", "danger"); const decide = approved => decidePermission(approved, approve, reject); approve.onclick = () => decide(true); reject.onclick = () => decide(false); actions.append(approve, reject); card.append(safe, actions);
+    }
+    async function decidePermission(approved, approve, reject) {
+      if (!state.permission || state.permission.pending) return; state.permission.pending = true; approve.disabled = reject.disabled = true;
+      try { const result = await request("/agent/permission/" + encodeURIComponent(state.permission.token), { method: "POST", body: { session_id: state.sessionId, approved } }); addCard("system", result.response || result.message || JSON.stringify(result), approved ? "批准结果" : "拒绝结果"); state.permission = null; setBusy(false); }
+      catch (err) { addCard("error", errorText("批准请求未完成（令牌已丢弃；请让 Agent 重新请求）", err), "批准错误"); state.permission = null; setBusy(false); }
+    }
+    async function send() {
+      const input = byId("message"), message = input.value.trim(); if (!message || state.busy || state.permission) return; setBusy(true); setStatus("chat-status", "Agent 正在处理…"); addCard("user", message, "你"); input.value = "";
+      try { if (!state.sessionId) await newSession(); if (!state.sessionId) throw new Error("未获得会话 ID"); const result = await request("/agent/chat", { method: "POST", body: { session_id: state.sessionId, message } }); state.latest = result; addCard("agent", result.response || "（Agent 未返回文本）", "Agent · " + (result.outcome || "completed")); renderEvidence(); renderFeedback(); if (result.outcome === "permission_required" && result.permission_request && result.permission_request.token) { state.permission = result.permission_request; renderApproval(state.permission); setStatus("chat-status", "等待你的批准决定。"); setBusy(false); return; } setStatus("chat-status", "已完成", "ok"); }
+      catch (err) { addCard("error", errorText("聊天请求失败", err), "错误"); setStatus("chat-status", "请求失败", "error"); }
+      setBusy(false);
+    }
+    byId("new-session").onclick = newSession; byId("refresh-sessions").onclick = refreshSessions; byId("composer").onsubmit = event => { event.preventDefault(); send(); }; byId("message").onkeydown = event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); send(); } }; updateTitle(); renderEvidence(); renderFeedback(); refreshSessions();
+  })();
+  </script>
+</body>
+</html>

@@ -51,6 +51,11 @@ func (b ToolBudget) normalized() ToolBudget {
 	if b.MaxTopK <= 0 {
 		b.MaxTopK = d.MaxTopK
 	}
+	// A tool result needs one additional model turn to be turned into a final
+	// answer. Keep that turn available even when configuration values overlap.
+	if b.MaxRounds <= b.MaxToolCalls {
+		b.MaxRounds = b.MaxToolCalls + 1
+	}
 	return b
 }
 
@@ -148,7 +153,7 @@ func (a *AgentLoop) ChatWithResult(parent context.Context, sessionID, userMessag
 			slog.Warn("agent context budget exhausted", "session_id", sessionID, "round", round, "message_bytes", messageBytes(messages), "max_context_bytes", a.budget.MaxContextBytes)
 			return a.terminal(sessionID, result, ledger, OutcomeBudgetExhausted), nil
 		}
-		slog.Info("agent llm request", "session_id", sessionID, "round", round, "native_tool_calling", native, "message_count", len(messages), "message_bytes", messageBytes(messages), "tool_definitions", toolDefinitionNames(a.tools.Definitions()))
+		slog.Info("agent llm request", "session_id", sessionID, "round", round, "native_tool_calling", native, "message_count", len(messages), "message_bytes", messageBytes(messages), "tool_definitions", toolDefinitionNames(a.tools.Definitions(a.budget)))
 		completion, err := a.complete(ctx, messages)
 		if err != nil {
 			if outcome := contextOutcome(ctx); outcome != "" {
@@ -186,7 +191,7 @@ func (a *AgentLoop) ChatWithResult(parent context.Context, sessionID, userMessag
 				slog.Warn("agent tool call rejected", "session_id", sessionID, "round", round, "tool", call.Name, "call_id", call.ID, "category", validationCategory, "err", validationErr)
 				trace := ToolTrace{SessionID: sessionID, CallID: call.ID, Tool: call.Name, Outcome: "rejected", ErrorCategory: validationCategory}
 				_ = a.sessions.RecordToolTrace(trace)
-				messages = append(messages, provider.Message{Role: "user", Content: "Tool request was rejected: " + safeToolError(validationCategory)})
+				messages = append(messages, provider.Message{Role: "user", Content: "Tool request was rejected: " + safeToolValidationError(call, validationCategory, a.budget)})
 				continue
 			}
 			if requiresApproval {
@@ -232,9 +237,9 @@ func (a *AgentLoop) ChatWithResult(parent context.Context, sessionID, userMessag
 
 func (a *AgentLoop) complete(ctx context.Context, messages []provider.Message) (provider.Completion, error) {
 	if p, ok := a.llm.(provider.ToolCallingProvider); ok {
-		return p.CompleteWithTools(ctx, messages, a.tools.Definitions())
+		return p.CompleteWithTools(ctx, messages, a.tools.Definitions(a.budget))
 	}
-	prompt := provider.Message{Role: "user", Content: fallbackInstruction(a.tools.Definitions())}
+	prompt := provider.Message{Role: "user", Content: fallbackInstruction(a.tools.Definitions(a.budget))}
 	answer, err := a.llm.Complete(ctx, append(append([]provider.Message(nil), messages...), prompt))
 	if err != nil {
 		return provider.Completion{}, err
@@ -301,6 +306,13 @@ func safeToolError(category string) string {
 		return "the requested tool is not allowed"
 	}
 	return "the tool arguments or execution were invalid"
+}
+
+func safeToolValidationError(call provider.ToolCall, category string, budget ToolBudget) string {
+	if category == "invalid_request" && call.Name == RAGRetrieveToolName {
+		return fmt.Sprintf("rag_retrieve requires a non-empty query and an optional integer top_k between 1 and %d; retry with valid arguments", budget.MaxTopK)
+	}
+	return safeToolError(category)
 }
 
 func boundedToolResult(result ToolResult, max int) string {

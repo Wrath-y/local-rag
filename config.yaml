@@ -100,9 +100,9 @@ server:
   port: 8765
 
 llm:
-  provider: "anthropic"            # openai | anthropic (or the name of a custom registered provider)
-  model: "claude-sonnet-4-6"
-  api_key_env: "ANTHROPIC_API_KEY" # Read the API key from an environment variable; never hard-code it
+  provider: "openrouter"            # openai | anthropic (or the name of a custom registered provider)
+  model: "deepseek-v4-flash"
+  api_key_env: "OPENROUTER_API_KEY" # Read the API key from an environment variable; never hard-code it
   timeout: 30
   max_retries: 2
 
@@ -113,8 +113,8 @@ query_rewrite:
 
 # Agent v1 tool loop: only read-only rag_retrieve is registered.
 agent:
-  max_rounds: 4
-  max_tool_calls: 3
+  max_rounds: 5
+  max_tool_calls: 4
   deadline_seconds: 20
   max_context_bytes: 24000
   max_result_bytes: 12000

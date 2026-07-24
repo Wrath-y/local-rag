@@ -86,10 +86,19 @@ func (h *Handler) AgentChat(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	retrievalID := ""
+	if len(result.Evidence) > 0 {
+		retrievalID, err = h.persistRetrieval(req.Message, "agent", req.SessionID, result.Evidence)
+		if err != nil {
+			slog.Error("agent chat feedback persistence failed", "session_id", req.SessionID, "evidence_count", len(result.Evidence), "err", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "feedback ledger unavailable"})
+			return
+		}
+	}
 	manifest := h.citations.Create(result.Evidence)
 	validation, _ := h.citations.Validate(manifest.Token, result.Response)
 	slog.Info("agent chat http response", "session_id", req.SessionID, "outcome", result.Outcome, "rounds", result.Rounds, "tool_calls", result.ToolCalls, "evidence_count", len(result.Evidence), "permission_required", result.Permission != nil, "duration_ms", time.Since(started).Milliseconds())
-	c.JSON(http.StatusOK, gin.H{
+	response := gin.H{
 		"response":            result.Response,
 		"citations":           manifest.Citations,
 		"evidence_token":      manifest.Token,
@@ -98,7 +107,11 @@ func (h *Handler) AgentChat(c *gin.Context) {
 		"rounds":              result.Rounds,
 		"tool_calls":          result.ToolCalls,
 		"permission_request":  result.Permission,
-	})
+	}
+	if retrievalID != "" {
+		response["retrieval_id"] = retrievalID
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 // AgentApprovePermission handles POST /agent/permission/:token. Approval is

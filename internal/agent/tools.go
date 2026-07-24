@@ -13,8 +13,6 @@ import (
 
 const RAGRetrieveToolName = "rag_retrieve"
 
-var ragRetrieveSchema = json.RawMessage(`{"type":"object","additionalProperties":false,"required":["query"],"properties":{"query":{"type":"string","minLength":1,"maxLength":1024},"top_k":{"type":"integer","minimum":1}}}`)
-
 // ToolResult is deliberately structured so only bounded evidence, rather than
 // raw tool output, reaches the model.
 type ToolResult struct {
@@ -24,7 +22,8 @@ type ToolResult struct {
 
 // ToolExecutor is the only execution boundary for Agent tools.
 type ToolExecutor interface {
-	Definition() provider.ToolDefinition
+	Name() string
+	Definition(ToolBudget) provider.ToolDefinition
 	Validate(json.RawMessage, ToolBudget) error
 	RequiresApproval() bool
 	Execute(context.Context, json.RawMessage, ToolBudget) (ToolResult, error)
@@ -40,16 +39,16 @@ func NewToolRegistry(executors ...ToolExecutor) *ToolRegistry {
 	r := &ToolRegistry{tools: make(map[string]ToolExecutor)}
 	for _, executor := range executors {
 		if executor != nil {
-			switch executor.Definition().Name {
+			switch executor.Name() {
 			case RAGRetrieveToolName, "rag_ingest", "rag_delete_source", "rag_index_rebuild":
-				r.tools[executor.Definition().Name] = executor
+				r.tools[executor.Name()] = executor
 			}
 		}
 	}
 	return r
 }
 
-func (r *ToolRegistry) Definitions() []provider.ToolDefinition {
+func (r *ToolRegistry) Definitions(budget ToolBudget) []provider.ToolDefinition {
 	if r == nil || len(r.tools) == 0 {
 		return nil
 	}
@@ -57,7 +56,7 @@ func (r *ToolRegistry) Definitions() []provider.ToolDefinition {
 	definitions := make([]provider.ToolDefinition, 0, len(r.tools))
 	for _, name := range names {
 		if tool := r.tools[name]; tool != nil {
-			definitions = append(definitions, tool.Definition())
+			definitions = append(definitions, tool.Definition(budget))
 		}
 	}
 	return definitions
@@ -96,9 +95,12 @@ func NewRAGRetrieveTool(retrieve RetrievalFunc) ToolExecutor {
 	return ragRetrieveTool{retrieve: retrieve}
 }
 
-func (ragRetrieveTool) Definition() provider.ToolDefinition {
+func (ragRetrieveTool) Name() string { return RAGRetrieveToolName }
+
+func (ragRetrieveTool) Definition(budget ToolBudget) provider.ToolDefinition {
+	schema := fmt.Sprintf(`{"type":"object","additionalProperties":false,"required":["query"],"properties":{"query":{"type":"string","minLength":1,"maxLength":1024},"top_k":{"type":"integer","minimum":1,"maximum":%d}}}`, budget.MaxTopK)
 	return provider.ToolDefinition{
-		Name: RAGRetrieveToolName, Description: "Read-only retrieval from the configured RAG knowledge base.", InputSchema: ragRetrieveSchema,
+		Name: RAGRetrieveToolName, Description: "Read-only retrieval from the configured RAG knowledge base.", InputSchema: json.RawMessage(schema),
 	}
 }
 
@@ -161,8 +163,9 @@ type ApprovedTool struct {
 	Run   func(context.Context, json.RawMessage) (ToolResult, error)
 }
 
-func (t ApprovedTool) Definition() provider.ToolDefinition { return t.Def }
-func (ApprovedTool) RequiresApproval() bool                { return true }
+func (t ApprovedTool) Name() string                                    { return t.Def.Name }
+func (t ApprovedTool) Definition(_ ToolBudget) provider.ToolDefinition { return t.Def }
+func (ApprovedTool) RequiresApproval() bool                            { return true }
 func (t ApprovedTool) Validate(raw json.RawMessage, _ ToolBudget) error {
 	if t.Check == nil {
 		return fmt.Errorf("%s is unavailable", t.Def.Name)
