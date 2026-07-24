@@ -4,10 +4,10 @@
 
 **Give Claude Code persistent long-term memory — retrieve knowledge precisely from your own documents**
 
-[![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev/)
+[![Go](https://img.shields.io/badge/Go-1.25.4+-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev/)
 [![SQLite](https://img.shields.io/badge/SQLite-vec0+FTS5-003B57?style=flat-square&logo=sqlite&logoColor=white)](https://github.com/asg017/sqlite-vec)
 [![Gin](https://img.shields.io/badge/Gin-HTTP-00ADD8?style=flat-square)](https://gin-gonic.com/)
-[![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
+[![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE.txt)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Plugin-orange?style=flat-square)](https://claude.ai/code)
 
 [Installation](#installation) · [Usage](#usage) · [Configuration](#configuration) · [Architecture](#architecture) · [Command Reference](#command-reference) · [How It Works](#how-it-works) · [FAQ](#faq)
@@ -34,7 +34,10 @@ Claude Code has no built-in vector database. Its native memory system is file-ba
 | Large docs burn tokens | Pasting a 100-page manual into the chat costs a fortune just reading the doc | Only retrieves relevant excerpts; the rest is never transmitted |
 | No cross-document semantic search | Claude can't "remember" multiple documents and search by meaning | All documents are indexed uniformly, returning the most relevant content by semantics |
 
-> 🔒 **All data stored locally. Nothing is uploaded to any server.**
+> 🔒 With the default local embedding and reranking providers, the database and
+> model inference stay on your machine. If you configure OpenAI, Cohere, Jina,
+> OpenRouter, or another remote provider, the text needed for that provider's
+> embedding, reranking, or LLM request is sent to that provider.
 
 ---
 
@@ -44,7 +47,7 @@ Claude Code has no built-in vector database. Its native memory system is file-ba
 
 | Tool | Purpose |
 |------|---------|
-| [Go 1.22+](https://go.dev/dl/) | Build the server |
+| [Go 1.25.4+](https://go.dev/dl/) | Build the server (matches `go.mod`) |
 | [Python 3.8+](https://www.python.org/downloads/) | Run the embedding sidecar (only if using local models) |
 | [jq](https://jqlang.github.io/jq/download/) | Parse JSON in hook script (`brew install jq` on Mac) |
 
@@ -119,7 +122,7 @@ canonical identity, loader, and Git path/ref/revision where applicable.
 ```
 
 Retrieved chunks now include request-scoped `[n]` citations. See the
-[citation contract](CITATIONS.md) for structured HTTP/MCP fields,
+[citation contract](docs/CITATIONS.md) for structured HTTP/MCP fields,
 validation, and uncertainty behavior.
 
 ### ⚡ Auto-Retrieval Mode
@@ -215,25 +218,31 @@ Enable cross-encoder reranking for higher relevance precision:
 /rag-rerank off   # Disable
 ```
 
-> First enable downloads `BAAI/bge-reranker-base` model (~400MB), then reuses in-process. Adds ~50-200ms per retrieval, zero extra tokens.
+> With `rerank.provider: local`, first enable downloads
+> `BAAI/bge-reranker-base` (~400 MB), then reuses it in-process. It typically
+> adds ~50–200 ms per retrieval and no model-context tokens. Remote rerank
+> providers use their own model, latency, pricing, and data-handling policies.
 
 ---
 
 ## Configuration
 
-Edit `config.yaml` to adjust parameters:
+Edit `config.yaml` to adjust parameters. The following is a valid minimal
+configuration; omitted fields receive server defaults.
 
 ```yaml
 server:
   port: 8765
 
-# Embedding provider: "local" (Python sidecar) or "openai" (API)
+# Embedding provider: "local" (Python sidecar), "openai", or "custom"
 embedding:
   provider: "local"
   model: "BAAI/bge-small-zh-v1.5"
   dims: 512
+  doc_prefix: "段落："
+  query_prefix: "查询："
 
-# Reranking: "local", "cohere", "jina", or "disabled"
+# Reranking: "local", "cohere", "jina", "custom", or "disabled"
 rerank:
   provider: "local"
   model: "BAAI/bge-reranker-base"
@@ -263,6 +272,15 @@ retrieve:
 storage:
   db_path: "data/rag.db"
 
+# Python sidecar settings (used only by embedding.provider: local)
+sidecar:
+  port: 8766
+
+# Optional query rewrite; requires a working llm provider
+query_rewrite:
+  enabled: false
+  strategy: "expansion" # expansion | hyde | multi_query
+
 # Connector paths are allowlisted; limits are server ceilings.
 connectors:
   allowed_local_paths: ["."]
@@ -271,6 +289,13 @@ connectors:
   max_duration_seconds: 60
   max_git_files: 2000
 ```
+
+The full set of supported fields is defined in
+[`internal/config/config.go`](internal/config/config.go). In particular,
+source-sync settings live under `sync`, feedback retention under `feedback`,
+and local sidecar health settings under `sidecar`. Values such as
+`storage.index_path`, `storage.texts_path`, and `rerank.enabled` are not used
+by the current server.
 
 ### Using OpenRouter
 
@@ -293,9 +318,10 @@ export OPENROUTER_API_KEY="sk-or-v1-..."
 Use an OpenRouter model slug for `model` (for example,
 `anthropic/claude-sonnet-4` or `deepseek/deepseek-chat-v3-0324`).
 
-### Using Third-Party Embedding API
+### Using a Third-Party Embedding API
 
-To skip the local Python sidecar entirely:
+To skip the local Python sidecar entirely, configure `embedding` and export its
+API key before starting the server:
 
 ```yaml
 embedding:
@@ -305,6 +331,10 @@ embedding:
   api_key_env: "OPENAI_API_KEY"
   base_url: "https://api.openai.com/v1"
 ```
+
+`base_url` defaults to the OpenAI API for the `openai` and `custom` embedding
+providers. The document chunks and retrieval queries handled by a remote
+embedding provider are sent to that provider.
 
 ---
 
@@ -369,10 +399,14 @@ Query → [Query Rewrite] → Embed
 | `semantic` | Embed sentences, cut where cosine similarity drops | EmbedProvider |
 | `agentic` | LLM determines optimal boundaries | LLMProvider |
 
-Switch at runtime:
+Switch query rewriting at runtime:
 ```bash
 /rag-rewrite on    # Enable query rewriting
 ```
+
+Select the chunking strategy in `config.yaml` before starting the server.
+Restart the server after changing it; existing chunks are not rechunked
+automatically.
 
 ---
 
@@ -391,8 +425,8 @@ Switch at runtime:
 | `/rag-sources` | List all sources | — |
 | `/rag-source-delete <name>` | Delete source | — |
 | `/rag-reset` | Clear entire knowledge base | — |
-| `/rag-export` | Export database as zip backup | — |
-| `/rag-import` | Import from zip backup | — |
+| `/rag-export [path]` | Export database as ZIP backup | — |
+| `/rag-import <path>` | Import a ZIP backup (asks for confirmation) | — |
 
 ---
 
