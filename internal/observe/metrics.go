@@ -150,6 +150,10 @@ var (
 		prometheus.CounterOpts{Name: "rag_sync_events_total", Help: "Incremental sync submissions, retries, conflicts, and cleanup events"},
 		[]string{"event"},
 	)
+	FeedbackOperations = prometheus.NewCounterVec(
+		prometheus.CounterOpts{Name: "rag_feedback_operations_total", Help: "Local feedback operations by safe result category"},
+		[]string{"operation"},
+	)
 )
 
 func InitMetrics() {
@@ -179,6 +183,7 @@ func InitMetrics() {
 		SyncChunksTotal,
 		SyncDuration,
 		SyncEventsTotal,
+		FeedbackOperations,
 	)
 }
 

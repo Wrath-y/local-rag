@@ -81,6 +81,18 @@ connectors:
   max_git_total_bytes: 52428800
   exclusions: [".env", "node_modules/", "vendor/"]
 
+# Local retrieval feedback ledger. No plaintext query is retained unless the
+# explicitly opt-in excerpt switch is enabled.
+feedback:
+  enabled: true
+  retention_days: 30
+  store_query_excerpt: false
+  query_excerpt_max_chars: 256
+  note_max_chars: 1000
+  review_note_max_chars: 1000
+  export_max_records: 10000
+  candidate_conversion_max: 1000
+
 log:
   lang: "en"   # Log language: zh (Chinese) or en (English)
 

@@ -16,6 +16,8 @@
 
 🧪 [Retrieval evaluation](docs/retrieval-evaluation.md)
 
+📝 [Local retrieval feedback](docs/retrieval-feedback.md)
+
 🔧 [Agent tool loop boundary](docs/agent-tools.md)
 
 </div>

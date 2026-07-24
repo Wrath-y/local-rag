@@ -49,15 +49,32 @@ func (h *Handler) Hook(c *gin.Context) {
 
 	// Perform retrieval.
 	evidence, err := h.doRetrieveEvidence(req.Prompt, 0)
-	if err != nil || len(evidence) == 0 {
+	if err != nil {
 		outcome = observe.HookOutcomeNoResults
-		if err != nil {
+		reason = observe.HookReasonRetrievalError
+		c.JSON(http.StatusOK, gin.H{"additional_context": ""})
+		return
+	}
+	if len(evidence) == 0 {
+		_, persistErr := h.persistRetrieval(req.Prompt, "hook", "", evidence)
+		if persistErr != nil {
+			outcome = observe.HookOutcomeNoResults
 			reason = observe.HookReasonRetrievalError
+			c.JSON(http.StatusOK, gin.H{"additional_context": ""})
+			return
 		}
+		outcome = observe.HookOutcomeNoResults
 		c.JSON(http.StatusOK, gin.H{"additional_context": ""})
 		return
 	}
 
+	retrievalID, persistErr := h.persistRetrieval(req.Prompt, "hook", "", evidence)
+	if persistErr != nil {
+		outcome = observe.HookOutcomeNoResults
+		reason = observe.HookReasonRetrievalError
+		c.JSON(http.StatusOK, gin.H{"additional_context": ""})
+		return
+	}
 	manifest := h.citations.Create(evidence)
 	ctx := citation.RenderAnswerInstructions(manifest.Citations)
 
@@ -66,6 +83,7 @@ func (h *Handler) Hook(c *gin.Context) {
 		"additional_context": ctx,
 		"citations":          manifest.Citations,
 		"evidence_token":     manifest.Token,
+		"retrieval_id":       retrievalID,
 	})
 }
 

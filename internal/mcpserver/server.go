@@ -80,6 +80,14 @@ func newMCPServer(deps Deps) *mcp.Server {
 		Name:        "rag_retrieve",
 		Description: "Retrieve relevant document chunks from the knowledge base using hybrid vector + keyword search. Returns the most semantically relevant passages for the given query.",
 	}, s.handleRetrieve)
+	mcp.AddTool(mcpServer, &mcp.Tool{Name: "rag_feedback_capture", Description: "Record privacy-minimized helpful, unhelpful, or citation-error feedback for a retrieval."}, s.handleFeedbackCapture)
+	mcp.AddTool(mcpServer, &mcp.Tool{Name: "rag_feedback_list", Description: "List locally retained feedback with safe fields by default."}, s.handleFeedbackList)
+	mcp.AddTool(mcpServer, &mcp.Tool{Name: "rag_feedback_aggregate", Description: "Aggregate retained feedback by safe dimensions."}, s.handleFeedbackAggregate)
+	mcp.AddTool(mcpServer, &mcp.Tool{Name: "rag_feedback_export", Description: "Export bounded local feedback as JSON Lines or CSV."}, s.handleFeedbackExport)
+	mcp.AddTool(mcpServer, &mcp.Tool{Name: "rag_feedback_convert_candidates", Description: "Explicitly convert eligible feedback into pending review candidates."}, s.handleFeedbackConvertCandidates)
+	mcp.AddTool(mcpServer, &mcp.Tool{Name: "rag_feedback_candidates", Description: "List local evaluation candidates."}, s.handleFeedbackCandidates)
+	mcp.AddTool(mcpServer, &mcp.Tool{Name: "rag_feedback_candidates_export", Description: "Export privacy-minimized local evaluation candidates."}, s.handleFeedbackCandidates)
+	mcp.AddTool(mcpServer, &mcp.Tool{Name: "rag_feedback_review_candidate", Description: "Approve or reject a pending local evaluation candidate."}, s.handleFeedbackReviewCandidate)
 
 	mcp.AddTool(mcpServer, &mcp.Tool{
 		Name:        "rag_list_sources",
@@ -147,14 +155,77 @@ type IngestOutput struct {
 }
 
 type RetrieveInput struct {
-	Query string `json:"query" jsonschema:"Search query to find relevant documents"`
-	TopK  int    `json:"top_k,omitempty" jsonschema:"Number of results to return (default: from config)"`
+	Query     string `json:"query" jsonschema:"Search query to find relevant documents"`
+	TopK      int    `json:"top_k,omitempty" jsonschema:"Number of results to return (default: from config)"`
+	SessionID string `json:"session_id,omitempty" jsonschema:"Optional known local agent session identifier"`
 }
 
 type RetrieveOutput struct {
 	Chunks        []string            `json:"chunks"`
 	Citations     []citation.Evidence `json:"citations"`
 	EvidenceToken string              `json:"evidence_token"`
+	RetrievalID   string              `json:"retrieval_id,omitempty"`
+}
+
+type FeedbackCaptureInput struct {
+	RetrievalID          string   `json:"retrieval_id"`
+	Kind                 string   `json:"kind"`
+	SessionID            string   `json:"session_id,omitempty"`
+	Note                 string   `json:"note,omitempty"`
+	CitationIDs          []string `json:"citation_ids,omitempty"`
+	SupersedesFeedbackID string   `json:"supersedes_feedback_id,omitempty"`
+}
+type FeedbackListInput struct {
+	Kind                string `json:"kind,omitempty"`
+	Channel             string `json:"channel,omitempty"`
+	RetrievalID         string `json:"retrieval_id,omitempty"`
+	SessionID           string `json:"session_id,omitempty"`
+	Source              string `json:"source,omitempty"`
+	CitationID          string `json:"citation_id,omitempty"`
+	Limit               int    `json:"limit,omitempty"`
+	IncludeSuperseded   bool   `json:"include_superseded,omitempty"`
+	IncludeNotes        bool   `json:"include_notes,omitempty"`
+	IncludeQueryExcerpt bool   `json:"include_query_excerpt,omitempty"`
+}
+type FeedbackAggregateInput struct {
+	Filters FeedbackListInput `json:"filters,omitempty"`
+	GroupBy []string          `json:"group_by"`
+}
+type FeedbackExportInput struct {
+	Filters             FeedbackListInput `json:"filters,omitempty"`
+	Format              string            `json:"format,omitempty"`
+	IncludeNotes        bool              `json:"include_notes,omitempty"`
+	IncludeQueryExcerpt bool              `json:"include_query_excerpt,omitempty"`
+}
+type FeedbackCandidateConvertInput struct {
+	Filters             FeedbackListInput `json:"filters,omitempty"`
+	IncludeQueryExcerpt bool              `json:"include_query_excerpt,omitempty"`
+	IncludeNote         bool              `json:"include_note,omitempty"`
+}
+type FeedbackCandidatesInput struct {
+	Status string `json:"status,omitempty"`
+	Kind   string `json:"kind,omitempty"`
+	Source string `json:"source,omitempty"`
+	Limit  int    `json:"limit,omitempty"`
+}
+type FeedbackReviewCandidateInput struct {
+	CandidateID string `json:"candidate_id"`
+	Status      string `json:"status"`
+	Note        string `json:"note,omitempty"`
+}
+type FeedbackCaptureOutput struct {
+	Feedback      store.FeedbackRecord `json:"feedback"`
+	SchemaVersion string               `json:"schema_version"`
+}
+type FeedbackCandidateConvertOutput struct {
+	Created       int      `json:"created"`
+	Skipped       int      `json:"skipped"`
+	CandidateIDs  []string `json:"candidate_ids"`
+	SchemaVersion string   `json:"schema_version"`
+}
+type FeedbackCandidatesOutput struct {
+	Candidates    []store.Candidate `json:"candidates"`
+	SchemaVersion string            `json:"schema_version"`
 }
 
 type ListSourcesInput struct{}
@@ -436,11 +507,6 @@ func (s *server) handleRetrieve(ctx context.Context, req *mcp.CallToolRequest, i
 	observe.RetrieveLatency.Observe(time.Since(start).Seconds())
 	observe.RetrieveTotal.WithLabelValues(boolStr(len(results) > 0)).Inc()
 
-	if len(results) == 0 {
-		manifest := s.citations.Create(nil)
-		return textResult("No relevant results found."), RetrieveOutput{Chunks: []string{}, Citations: []citation.Evidence{}, EvidenceToken: manifest.Token}, nil
-	}
-
 	// Optional rerank
 	if s.deps.Reranker != nil && len(results) > 1 {
 		docs := make([]string, len(results))
@@ -465,10 +531,120 @@ func (s *server) handleRetrieve(ctx context.Context, req *mcp.CallToolRequest, i
 		}
 	}
 
-	manifest := s.citations.Create(citation.EvidenceFromResults(results))
+	evidence := citation.EvidenceFromResults(results)
+	retrievalID, err := s.persistRetrieval(input.Query, input.SessionID, results, evidence)
+	if err != nil {
+		return errResult(fmt.Sprintf("feedback ledger unavailable: %v", err)), RetrieveOutput{}, nil
+	}
+	manifest := s.citations.Create(evidence)
 	chunks := citation.RenderChunks(manifest.Citations)
+	if len(results) == 0 {
+		return textResult("No relevant results found."), RetrieveOutput{Chunks: []string{}, Citations: manifest.Citations, EvidenceToken: manifest.Token, RetrievalID: retrievalID}, nil
+	}
 	text := strings.Join(chunks, "\n---\n")
-	return textResult(text), RetrieveOutput{Chunks: chunks, Citations: manifest.Citations, EvidenceToken: manifest.Token}, nil
+	return textResult(text), RetrieveOutput{Chunks: chunks, Citations: manifest.Citations, EvidenceToken: manifest.Token, RetrievalID: retrievalID}, nil
+}
+
+func (s *server) persistRetrieval(query, sessionID string, results []store.RetrieveResult, evidence []citation.Evidence) (string, error) {
+	if s.deps.Store == nil {
+		return "", fmt.Errorf("store unavailable")
+	}
+	citations := make([]store.RetrievalCitation, len(results))
+	for i, result := range results {
+		citations[i] = store.RetrievalCitation{ChunkID: result.ID, Source: result.Source, ParentID: result.ParentID, VectorScore: result.VecScore, BM25Score: result.BM25Score, FinalScore: result.FinalScore}
+	}
+	cfg := s.deps.Config.Feedback
+	event, err := s.deps.Store.RecordRetrieval(store.RecordRetrievalInput{Query: query, Channel: "mcp", SessionID: sessionID, StoreExcerpt: cfg.StoreQueryExcerpt, ExcerptLimit: cfg.QueryExcerptMaxChars, Citations: citations})
+	if err != nil {
+		return "", err
+	}
+	for i := range evidence {
+		if i < len(event.Citations) {
+			evidence[i].CitationID = event.Citations[i].CitationID
+		}
+	}
+	return event.RetrievalID, nil
+}
+
+func feedbackFilter(input FeedbackListInput) store.FeedbackListFilter {
+	return store.FeedbackListFilter{Kind: input.Kind, Channel: input.Channel, RetrievalID: input.RetrievalID, SessionID: input.SessionID, Source: input.Source, CitationID: input.CitationID, Limit: input.Limit, IncludeSuperseded: input.IncludeSuperseded, IncludeNotes: input.IncludeNotes, IncludeQueryExcerpt: input.IncludeQueryExcerpt}
+}
+func (s *server) feedbackConfig() config.FeedbackConfig {
+	cfg := s.deps.Config.Feedback
+	if cfg.RetentionDays == 0 {
+		cfg.RetentionDays = 30
+	}
+	if cfg.NoteMaxChars == 0 {
+		cfg.NoteMaxChars = 1000
+	}
+	if cfg.ReviewNoteMaxChars == 0 {
+		cfg.ReviewNoteMaxChars = 1000
+	}
+	if cfg.ExportMaxRecords == 0 {
+		cfg.ExportMaxRecords = 10000
+	}
+	if cfg.CandidateConversionMax == 0 {
+		cfg.CandidateConversionMax = 1000
+	}
+	return cfg
+}
+func feedbackMCPError(err error) *mcp.CallToolResult { return errResult("feedback: " + err.Error()) }
+func (s *server) handleFeedbackCapture(_ context.Context, _ *mcp.CallToolRequest, input FeedbackCaptureInput) (*mcp.CallToolResult, FeedbackCaptureOutput, error) {
+	cfg := s.feedbackConfig()
+	record, err := s.deps.Store.CreateFeedback(store.FeedbackInput{RetrievalID: input.RetrievalID, Kind: input.Kind, SessionID: input.SessionID, Note: input.Note, CitationIDs: input.CitationIDs, SupersedesFeedbackID: input.SupersedesFeedbackID}, cfg.NoteMaxChars, cfg.RetentionDays)
+	if err != nil {
+		return feedbackMCPError(err), FeedbackCaptureOutput{}, nil
+	}
+	observe.FeedbackOperations.WithLabelValues("capture_ok").Inc()
+	return textResult("Feedback recorded."), FeedbackCaptureOutput{Feedback: record, SchemaVersion: store.FeedbackSchemaVersion}, nil
+}
+func (s *server) handleFeedbackList(_ context.Context, _ *mcp.CallToolRequest, input FeedbackListInput) (*mcp.CallToolResult, store.FeedbackPage, error) {
+	page, err := s.deps.Store.ListFeedback(feedbackFilter(input), s.feedbackConfig().RetentionDays)
+	if err != nil {
+		return feedbackMCPError(err), store.FeedbackPage{}, nil
+	}
+	return textResult("Feedback listed."), page, nil
+}
+func (s *server) handleFeedbackAggregate(_ context.Context, _ *mcp.CallToolRequest, input FeedbackAggregateInput) (*mcp.CallToolResult, store.AggregateResult, error) {
+	result, err := s.deps.Store.AggregateFeedback(feedbackFilter(input.Filters), input.GroupBy, s.feedbackConfig().RetentionDays)
+	if err != nil {
+		return feedbackMCPError(err), store.AggregateResult{}, nil
+	}
+	return textResult("Feedback aggregated."), result, nil
+}
+func (s *server) handleFeedbackExport(_ context.Context, _ *mcp.CallToolRequest, input FeedbackExportInput) (*mcp.CallToolResult, map[string]any, error) {
+	cfg := s.feedbackConfig()
+	content, err := s.deps.Store.ExportFeedback(feedbackFilter(input.Filters), input.Format, input.IncludeNotes, input.IncludeQueryExcerpt, cfg.ExportMaxRecords, cfg.RetentionDays)
+	if err != nil {
+		return feedbackMCPError(err), nil, nil
+	}
+	return textResult(string(content)), map[string]any{"schema_version": store.FeedbackSchemaVersion, "format": input.Format, "content": string(content)}, nil
+}
+func (s *server) handleFeedbackConvertCandidates(_ context.Context, _ *mcp.CallToolRequest, input FeedbackCandidateConvertInput) (*mcp.CallToolResult, FeedbackCandidateConvertOutput, error) {
+	cfg := s.feedbackConfig()
+	items, skipped, err := s.deps.Store.ConvertCandidates(feedbackFilter(input.Filters), input.IncludeQueryExcerpt, input.IncludeNote, cfg.CandidateConversionMax, cfg.RetentionDays)
+	if err != nil {
+		return feedbackMCPError(err), FeedbackCandidateConvertOutput{}, nil
+	}
+	ids := make([]string, len(items))
+	for i, item := range items {
+		ids[i] = item.CandidateID
+	}
+	return textResult("Candidates converted."), FeedbackCandidateConvertOutput{Created: len(items), Skipped: skipped, CandidateIDs: ids, SchemaVersion: store.FeedbackSchemaVersion}, nil
+}
+func (s *server) handleFeedbackCandidates(_ context.Context, _ *mcp.CallToolRequest, input FeedbackCandidatesInput) (*mcp.CallToolResult, FeedbackCandidatesOutput, error) {
+	items, err := s.deps.Store.ListCandidates(input.Status, input.Kind, input.Source, input.Limit)
+	if err != nil {
+		return feedbackMCPError(err), FeedbackCandidatesOutput{}, nil
+	}
+	return textResult("Candidates listed."), FeedbackCandidatesOutput{Candidates: items, SchemaVersion: store.FeedbackSchemaVersion}, nil
+}
+func (s *server) handleFeedbackReviewCandidate(_ context.Context, _ *mcp.CallToolRequest, input FeedbackReviewCandidateInput) (*mcp.CallToolResult, store.Candidate, error) {
+	item, err := s.deps.Store.ReviewCandidate(input.CandidateID, input.Status, input.Note, s.feedbackConfig().ReviewNoteMaxChars)
+	if err != nil {
+		return feedbackMCPError(err), store.Candidate{}, nil
+	}
+	return textResult("Candidate reviewed."), item, nil
 }
 
 func (s *server) handleListSources(ctx context.Context, req *mcp.CallToolRequest, input ListSourcesInput) (*mcp.CallToolResult, ListSourcesOutput, error) {

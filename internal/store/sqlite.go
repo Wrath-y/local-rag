@@ -12,8 +12,9 @@ import (
 
 // Store wraps a SQLite database with the RAG schema.
 type Store struct {
-	db   *sql.DB
-	dims int
+	db          *sql.DB
+	dims        int
+	feedbackKey []byte
 }
 
 // New opens (or creates) a SQLite database at dbPath, applies pragmas, and
@@ -94,8 +95,17 @@ END;
 		db.Close()
 		return nil, fmt.Errorf("store.New: migrate sync schema: %w", err)
 	}
+	if err := ensureFeedbackSchema(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("store.New: migrate feedback schema: %w", err)
+	}
+	key, err := loadOrCreateFeedbackKey(dbPath)
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("store.New: initialize feedback key: %w", err)
+	}
 
-	return &Store{db: db, dims: dims}, nil
+	return &Store{db: db, dims: dims, feedbackKey: key}, nil
 }
 
 // ensureChunkCitationColumns upgrades databases created before provenance was

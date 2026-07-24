@@ -132,6 +132,14 @@ func main() {
 	r.POST("/citations/validate", h.ValidateCitations)
 	r.POST("/hook", h.Hook)
 	r.POST("/hook/outcome", h.HookOutcomeReport)
+	r.POST("/feedback", h.CreateFeedback)
+	r.GET("/feedback", h.ListFeedback)
+	r.GET("/feedback/aggregate", h.AggregateFeedback)
+	r.GET("/feedback/export", h.ExportFeedback)
+	r.POST("/feedback/candidates/convert", h.ConvertCandidates)
+	r.GET("/feedback/candidates", h.ListCandidates)
+	r.GET("/feedback/candidates/export", h.ExportCandidates)
+	r.POST("/feedback/candidates/:id/review", h.ReviewCandidate)
 
 	// Toggle routes.
 	r.POST("/rerank/toggle", h.RerankToggle)

@@ -21,6 +21,7 @@ type Config struct {
 	Sidecar      SidecarConfig      `yaml:"sidecar"`
 	Sync         SyncConfig         `yaml:"sync"`
 	Connectors   ConnectorConfig    `yaml:"connectors"`
+	Feedback     FeedbackConfig     `yaml:"feedback"`
 	Log          LogConfig          `yaml:"log"`
 }
 
@@ -183,6 +184,19 @@ type ConnectorConfig struct {
 	Exclusions        []string `yaml:"exclusions"`
 }
 
+// FeedbackConfig controls the local-only retrieval feedback ledger. Query
+// excerpts are deliberately opt-in: fingerprints are the default identifier.
+type FeedbackConfig struct {
+	Enabled                bool `yaml:"enabled"`
+	RetentionDays          int  `yaml:"retention_days"`
+	StoreQueryExcerpt      bool `yaml:"store_query_excerpt"`
+	QueryExcerptMaxChars   int  `yaml:"query_excerpt_max_chars"`
+	NoteMaxChars           int  `yaml:"note_max_chars"`
+	ReviewNoteMaxChars     int  `yaml:"review_note_max_chars"`
+	ExportMaxRecords       int  `yaml:"export_max_records"`
+	CandidateConversionMax int  `yaml:"candidate_conversion_max"`
+}
+
 // LogConfig holds logging settings.
 type LogConfig struct {
 	Level  string `yaml:"level"`
@@ -225,6 +239,9 @@ func validate(cfg *Config) error {
 	}
 	if cfg.Connectors.MaxSourceBytes < 1 || cfg.Connectors.MaxDocuments < 1 || cfg.Connectors.MaxExtractedBytes < 1 || cfg.Connectors.MaxDurationSecs < 1 || cfg.Connectors.MaxGitFiles < 1 || cfg.Connectors.MaxGitFileBytes < 1 || cfg.Connectors.MaxGitTotalBytes < 1 {
 		return fmt.Errorf("config: connector limits must be positive")
+	}
+	if cfg.Feedback.RetentionDays < 1 || cfg.Feedback.QueryExcerptMaxChars < 1 || cfg.Feedback.NoteMaxChars < 1 || cfg.Feedback.ReviewNoteMaxChars < 1 || cfg.Feedback.ExportMaxRecords < 1 || cfg.Feedback.CandidateConversionMax < 1 {
+		return fmt.Errorf("config: feedback limits and retention_days must be positive")
 	}
 	return nil
 }
@@ -432,6 +449,30 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Connectors.MaxGitTotalBytes == 0 {
 		cfg.Connectors.MaxGitTotalBytes = 50 << 20
+	}
+
+	// Feedback is local-only and capture is enabled by default once local
+	// storage is available. Plaintext query excerpts remain default-deny.
+	if !cfg.Feedback.Enabled {
+		cfg.Feedback.Enabled = true
+	}
+	if cfg.Feedback.RetentionDays == 0 {
+		cfg.Feedback.RetentionDays = 30
+	}
+	if cfg.Feedback.QueryExcerptMaxChars == 0 {
+		cfg.Feedback.QueryExcerptMaxChars = 256
+	}
+	if cfg.Feedback.NoteMaxChars == 0 {
+		cfg.Feedback.NoteMaxChars = 1000
+	}
+	if cfg.Feedback.ReviewNoteMaxChars == 0 {
+		cfg.Feedback.ReviewNoteMaxChars = 1000
+	}
+	if cfg.Feedback.ExportMaxRecords == 0 {
+		cfg.Feedback.ExportMaxRecords = 10000
+	}
+	if cfg.Feedback.CandidateConversionMax == 0 {
+		cfg.Feedback.CandidateConversionMax = 1000
 	}
 
 	// Log

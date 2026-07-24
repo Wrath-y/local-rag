@@ -16,6 +16,9 @@ import (
 // Evidence is a client-facing citation record. ID is an ordinal assigned only
 // within one retrieval request; it is never a persistent document identifier.
 type Evidence struct {
+	// CitationID is a durable, retrieval-scoped identifier when feedback
+	// capture is enabled. ID remains the request-scoped display label.
+	CitationID  string `json:"citation_id,omitempty"`
 	ID          int    `json:"id"`
 	Label       string `json:"label"`
 	ChunkID     int64  `json:"chunk_id"`

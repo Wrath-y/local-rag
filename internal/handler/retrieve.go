@@ -10,11 +10,13 @@ import (
 	"github.com/Wrath-y/local-rag/internal/citation"
 	"github.com/Wrath-y/local-rag/internal/observe"
 	"github.com/Wrath-y/local-rag/internal/retrieval"
+	"github.com/Wrath-y/local-rag/internal/store"
 )
 
 type retrieveRequest struct {
 	Text              string `json:"text" binding:"required"`
 	ContextTokensUsed int    `json:"context_tokens_used"`
+	SessionID         string `json:"session_id"`
 }
 
 // Retrieve performs hybrid vector+BM25 search and returns formatted chunks.
@@ -35,6 +37,15 @@ func (h *Handler) Retrieve(c *gin.Context) {
 		return
 	}
 
+	retrievalID, err := h.persistRetrieval(req.Text, "http", req.SessionID, evidence)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if store.IsValidationError(err) {
+			status = http.StatusBadRequest
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
+		return
+	}
 	manifest := h.citations.Create(evidence)
 	chunks := citation.RenderChunks(evidence)
 	observe.RetrieveTotal.WithLabelValues(boolLabel(len(chunks) > 0)).Inc()
@@ -42,7 +53,36 @@ func (h *Handler) Retrieve(c *gin.Context) {
 		"chunks":         chunks,
 		"citations":      manifest.Citations,
 		"evidence_token": manifest.Token,
+		"retrieval_id":   retrievalID,
 	})
+}
+
+// persistRetrieval creates the durable, privacy-minimized feedback ledger
+// entry and maps its opaque citation IDs back onto the existing response
+// evidence. It intentionally does not alter ranking or chunk formatting.
+func (h *Handler) persistRetrieval(query, channel, sessionID string, evidence []citation.Evidence) (string, error) {
+	if h.deps.Config == nil || !h.deps.Config.Feedback.Enabled || h.deps.Stores == nil {
+		return "", nil
+	}
+	var event store.RetrievalEvent
+	err := h.deps.Stores.WithStore(func(st *store.Store) error {
+		citations := make([]store.RetrievalCitation, len(evidence))
+		for i, item := range evidence {
+			citations[i] = store.RetrievalCitation{ChunkID: item.ChunkID, Source: item.Source}
+		}
+		var err error
+		event, err = st.RecordRetrieval(store.RecordRetrievalInput{Query: query, Channel: channel, SessionID: sessionID, StoreExcerpt: h.deps.Config.Feedback.StoreQueryExcerpt, ExcerptLimit: h.deps.Config.Feedback.QueryExcerptMaxChars, Citations: citations})
+		return err
+	})
+	if err != nil {
+		return "", err
+	}
+	for i := range evidence {
+		if i < len(event.Citations) {
+			evidence[i].CitationID = event.Citations[i].CitationID
+		}
+	}
+	return event.RetrievalID, nil
 }
 
 // doRetrieveEvidence encapsulates ranked retrieval and deterministic evidence

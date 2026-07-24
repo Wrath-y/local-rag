@@ -79,6 +79,17 @@ connectors:
   max_git_total_bytes: 52428800
   exclusions: [".env", "node_modules/", "vendor/"]
 
+# 本地检索反馈账本。默认仅保存 HMAC 查询指纹；查询明文摘录必须显式开启。
+feedback:
+  enabled: true
+  retention_days: 30              # 反馈、检索快照和候选集的保留天数，必须为正数
+  store_query_excerpt: false      # 默认不保存查询摘录
+  query_excerpt_max_chars: 256    # 开启摘录后，脱敏并按 Unicode 字符截断
+  note_max_chars: 1000            # 反馈备注最大字符数
+  review_note_max_chars: 1000     # 候选审核备注最大字符数
+  export_max_records: 10000       # 单次反馈或候选导出的最大记录数
+  candidate_conversion_max: 1000  # 单次转化为评测候选的最大记录数
+
 log:
   lang: "en"   # 日志语言：zh（中文）或 en（English）
 
