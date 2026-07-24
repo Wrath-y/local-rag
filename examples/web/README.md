@@ -30,6 +30,10 @@ Open <http://127.0.0.1:8080/agent-tool-test.html> to manually test Agent
 retrieval and the approval flow for knowledge-base ingest, source deletion, and
 index rebuild.
 
+Open <http://127.0.0.1:8080/retrieval-feedback-test.html> to exercise every
+HTTP endpoint in the retrieval-feedback loop. Its API address defaults to
+`http://127.0.0.1:8765` and can be changed in the page.
+
 ## Available actions
 
 | Page action | API endpoint |

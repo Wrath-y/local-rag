@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Retrieval feedback loop test page</title>
+  <style>
+    body { color: #17212b; font: 16px/1.5 system-ui, sans-serif; margin: 2rem auto; max-width: 70rem; padding: 0 1rem; }
+    section, .notice { border: 1px solid #cbd5e1; border-radius: .5rem; margin: 1rem 0; padding: 1rem; }
+    .notice { background: #f8fafc; }
+    .grid { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); }
+    label { display: block; font-weight: 600; }
+    input, select, textarea, button { box-sizing: border-box; font: inherit; margin-top: .25rem; max-width: 100%; padding: .35rem; }
+    input, select, textarea { width: 100%; }
+    textarea { min-height: 4.5rem; }
+    button { cursor: pointer; width: auto; }
+    fieldset { border: 0; margin: .75rem 0 0; padding: 0; }
+    fieldset label { font-weight: 400; }
+    fieldset input { width: auto; }
+    #citations label { font-weight: 400; margin: .25rem 0; }
+    pre { background: #0f172a; border-radius: .4rem; color: #e2e8f0; overflow: auto; padding: 1rem; white-space: pre-wrap; word-break: break-word; }
+    .status { font-weight: 600; min-height: 1.5rem; }
+  </style>
+</head>
+<body>
+  <h1>Retrieval feedback loop test page</h1>
+  <p class="notice">Local developer/manual-test tool, not a production interface. It does not use browser storage, cookies, analytics, or remote assets. Listing and export omit notes and query excerpts unless you explicitly opt in. Feedback and candidate approval never automatically change retrieval, reranking, vectors, indexes, or model behavior.</p>
+
+  <section>
+    <h2>API connection</h2>
+    <label for="api-base">Local API base URL</label>
+    <input id="api-base" value="http://127.0.0.1:8765" inputmode="url">
+  </section>
+
+  <section>
+    <h2>1. Retrieve</h2>
+    <form id="retrieve-form">
+      <label for="query">Query</label>
+      <textarea id="query" required></textarea>
+      <div class="grid">
+        <label>Optional session ID<input id="retrieve-session-id"></label>
+        <label>Context tokens used<input id="context-tokens-used" type="number" min="0"></label>
+      </div>
+      <button type="submit">Run retrieval</button>
+    </form>
+    <p id="retrieval-id">No retrieval has been run.</p>
+    <div id="citations" aria-live="polite"></div>
+  </section>
+
+  <section>
+    <h2>2. Capture feedback</h2>
+    <form id="feedback-form">
+      <div class="grid">
+        <label>Retrieval ID<input id="feedback-retrieval-id" required></label>
+        <label>Kind
+          <select id="feedback-kind">
+            <option value="helpful">Helpful</option>
+            <option value="unhelpful">Unhelpful</option>
+            <option value="citation-error">Citation error</option>
+          </select>
+        </label>
+        <label>Optional session ID<input id="feedback-session-id"></label>
+        <label>Supersedes feedback ID<input id="supersedes-feedback-id"></label>
+      </div>
+      <label>Optional note<textarea id="feedback-note"></textarea></label>
+      <button type="submit">Submit feedback</button>
+    </form>
+  </section>
+
+  <section>
+    <h2>3. List feedback</h2>
+    <form id="list-form">
+      <div class="grid">
+        <label>Kind<input name="kind"></label><label>Channel<input name="channel"></label>
+        <label>Retrieval ID<input name="retrieval_id"></label><label>Session ID<input name="session_id"></label>
+        <label>Source<input name="source"></label><label>Citation ID<input name="citation_id"></label>
+        <label>Candidate status<input name="candidate_status"></label><label>Limit<input name="limit" type="number" min="1"></label>
+        <label>From (RFC3339)<input name="from"></label><label>To (RFC3339)<input name="to"></label>
+      </div>
+      <fieldset><label><input name="include_superseded" type="checkbox"> Include superseded feedback</label><label><input name="include_notes" type="checkbox"> Include notes (sensitive)</label><label><input name="include_query_excerpt" type="checkbox"> Include query excerpts (sensitive)</label></fieldset>
+      <button type="submit">List feedback</button>
+    </form>
+  </section>
+
+  <section>
+    <h2>4. Aggregate feedback</h2>
+    <form id="aggregate-form">
+      <div class="grid"><label>Group by (comma-separated)<input name="group_by" value="kind,channel" required></label><label>Kind filter<input name="kind"></label><label>Source filter<input name="source"></label><label>Channel filter<input name="channel"></label></div>
+      <button type="submit">Aggregate feedback</button>
+    </form>
+  </section>
+
+  <section>
+    <h2>5. Export feedback</h2>
+    <form id="export-form">
+      <div class="grid"><label>Format<select name="format"><option value="jsonl">JSON Lines</option><option value="csv">CSV</option></select></label><label>Kind filter<input name="kind"></label><label>Source filter<input name="source"></label><label>Limit<input name="limit" type="number" min="1"></label></div>
+      <fieldset><label><input name="include_notes" type="checkbox"> Include notes (sensitive)</label><label><input name="include_query_excerpt" type="checkbox"> Include query excerpts (sensitive)</label></fieldset>
+      <button type="submit">Export feedback</button>
+    </form>
+  </section>
+
+  <section>
+    <h2>6. Convert feedback to candidates</h2>
+    <form id="convert-form">
+      <div class="grid"><label>Kind filter<input name="kind"></label><label>Source filter<input name="source"></label><label>Retrieval ID filter<input name="retrieval_id"></label></div>
+      <fieldset><label><input name="include_query_excerpt" type="checkbox"> Include query excerpt (sensitive)</label><label><input name="include_note" type="checkbox"> Include feedback note (sensitive)</label></fieldset>
+      <button type="submit">Convert candidates</button>
+    </form>
+  </section>
+
+  <section>
+    <h2>7. List or export candidates</h2>
+    <form id="candidates-form">
+      <div class="grid"><label>Status<input name="status" placeholder="pending"></label><label>Kind<input name="kind"></label><label>Source<input name="source"></label><label>Limit<input name="limit" type="number" min="1"></label></div>
+      <button type="submit" data-action="list">List candidates</button>
+      <button type="submit" data-action="export">Export candidates</button>
+    </form>
+  </section>
+
+  <section>
+    <h2>8. Review candidate</h2>
+    <form id="review-form">
+      <div class="grid"><label>Candidate ID<input id="candidate-id" required></label><label>Status<select id="review-status"><option value="approved">Approved</option><option value="rejected">Rejected</option></select></label></div>
+      <label>Optional review note<textarea id="review-note"></textarea></label>
+      <button type="submit">Submit review</button>
+    </form>
+  </section>
+
+  <section>
+    <h2>Response</h2>
+    <p class="status" id="status" aria-live="polite">Ready.</p>
+    <pre id="response" aria-live="polite">No response yet.</pre>
+  </section>
+
+  <script>
+    (() => {
+      "use strict";
+      const byId = (id) => document.getElementById(id);
+      const status = byId("status");
+      const response = byId("response");
+      let latestRetrievalID = "";
+
+      function apiURL(path, params) {
+        const base = byId("api-base").value.trim().replace(/\/+$/, "");
+        const url = new URL(path, base || window.location.origin);
+        if (params) url.search = params.toString();
+        return url;
+      }
+
+      function showResult(label, result) {
+        status.textContent = label + ": HTTP " + result.status;
+        response.textContent = typeof result.data === "string" ? result.data : JSON.stringify(result.data, null, 2);
+      }
+
+      async function request(path, options = {}) {
+        const { method = "GET", params, payload } = options;
+        try {
+          const result = await fetch(apiURL(path, params), {
+            method,
+            headers: payload === undefined ? undefined : { "Content-Type": "application/json" },
+            body: payload === undefined ? undefined : JSON.stringify(payload)
+          });
+          const raw = await result.text();
+          let data = raw;
+          try { data = raw ? JSON.parse(raw) : {}; } catch (_) {}
+          return { ok: result.ok, status: result.status, data };
+        } catch (error) {
+          return { ok: false, status: "network error", data: { error: String(error) } };
+        }
+      }
+
+      function queryParams(form) {
+        const params = new URLSearchParams();
+        for (const [name, value] of new FormData(form)) {
+          if (value === "") continue;
+          params.set(name, value === "on" ? "true" : value);
+        }
+        return params;
+      }
+
+      function renderCitations(items) {
+        const container = byId("citations");
+        container.replaceChildren();
+        if (!items.length) { container.textContent = "No citations were returned."; return; }
+        const heading = document.createElement("p");
+        heading.textContent = "Select citations to attach to feedback:";
+        container.append(heading);
+        items.forEach((citation, index) => {
+          if (!citation.citation_id) return;
+          const label = document.createElement("label");
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.name = "citation-id";
+          checkbox.value = citation.citation_id;
+          label.append(checkbox, document.createTextNode(" " + (citation.label || "Citation " + (index + 1)) + " — " + (citation.source || "unknown source")));
+          container.append(label);
+        });
+      }
+
+      byId("retrieve-form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const payload = { text: byId("query").value };
+        const sessionID = byId("retrieve-session-id").value;
+        const contextTokens = byId("context-tokens-used").value;
+        if (sessionID) payload.session_id = sessionID;
+        if (contextTokens) payload.context_tokens_used = Number(contextTokens);
+        const result = await request("/retrieve", { method: "POST", payload });
+        showResult("Retrieve", result);
+        if (!result.ok || !result.data || typeof result.data !== "object") return;
+        latestRetrievalID = result.data.retrieval_id || "";
+        byId("feedback-retrieval-id").value = latestRetrievalID;
+        byId("retrieval-id").textContent = latestRetrievalID ? "Latest retrieval ID: " + latestRetrievalID : "The server did not return a retrieval ID (feedback capture may be disabled).";
+        renderCitations(Array.isArray(result.data.citations) ? result.data.citations : []);
+      });
+
+      byId("feedback-form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const payload = { retrieval_id: byId("feedback-retrieval-id").value || latestRetrievalID, kind: byId("feedback-kind").value };
+        const citationIDs = Array.from(document.querySelectorAll('input[name="citation-id"]:checked'), (item) => item.value);
+        const optional = [["session_id", byId("feedback-session-id").value], ["note", byId("feedback-note").value], ["supersedes_feedback_id", byId("supersedes-feedback-id").value]];
+        optional.forEach(([key, value]) => { if (value) payload[key] = value; });
+        if (citationIDs.length) payload.citation_ids = citationIDs;
+        showResult("Capture feedback", await request("/feedback", { method: "POST", payload }));
+      });
+
+      byId("list-form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        showResult("List feedback", await request("/feedback", { params: queryParams(event.currentTarget) }));
+      });
+
+      byId("aggregate-form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        showResult("Aggregate feedback", await request("/feedback/aggregate", { params: queryParams(event.currentTarget) }));
+      });
+
+      byId("export-form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        showResult("Export feedback", await request("/feedback/export", { params: queryParams(event.currentTarget) }));
+      });
+
+      byId("convert-form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const filters = {};
+        [["Kind", "kind"], ["Source", "source"], ["RetrievalID", "retrieval_id"]].forEach(([field, name]) => { if (form.elements[name].value) filters[field] = form.elements[name].value; });
+        const payload = { filters, include_query_excerpt: form.elements.include_query_excerpt.checked, include_note: form.elements.include_note.checked };
+        showResult("Convert candidates", await request("/feedback/candidates/convert", { method: "POST", payload }));
+      });
+
+      byId("candidates-form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const action = event.submitter.dataset.action;
+        const path = action === "export" ? "/feedback/candidates/export" : "/feedback/candidates";
+        showResult(action === "export" ? "Export candidates" : "List candidates", await request(path, { params: queryParams(event.currentTarget) }));
+      });
+
+      byId("review-form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const note = byId("review-note").value;
+        const payload = { status: byId("review-status").value };
+        if (note) payload.note = note;
+        const id = encodeURIComponent(byId("candidate-id").value);
+        showResult("Review candidate", await request("/feedback/candidates/" + id + "/review", { method: "POST", payload }));
+      });
+    })();
+  </script>
+</body>
+</html>

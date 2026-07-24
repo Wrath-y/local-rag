@@ -8,6 +8,12 @@ feedback later.
 
 ## Capture
 
+For a local browser smoke test, serve `examples/web` and open
+`retrieval-feedback-test.html`. The self-contained developer page calls every
+HTTP feedback-loop endpoint described below. It is not a production UI, uses
+no browser storage or remote assets, and lets the developer choose the local
+API address.
+
 Use `POST /feedback` (or MCP `rag_feedback_capture`) with one of
 `helpful`, `unhelpful`, or `citation-error`:
 
