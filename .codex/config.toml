@@ -1,0 +1,3 @@
+[features]
+# Keep the project hook enabled when this repository is trusted in Codex.
+hooks = true

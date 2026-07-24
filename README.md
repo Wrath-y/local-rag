@@ -2,13 +2,14 @@
 
 # 🧠 Local RAG
 
-**Give Claude Code persistent long-term memory — retrieve knowledge precisely from your own documents**
+**Give Claude Code and Codex persistent long-term memory — retrieve knowledge precisely from your own documents**
 
 [![Go](https://img.shields.io/badge/Go-1.25.4+-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev/)
 [![SQLite](https://img.shields.io/badge/SQLite-vec0+FTS5-003B57?style=flat-square&logo=sqlite&logoColor=white)](https://github.com/asg017/sqlite-vec)
 [![Gin](https://img.shields.io/badge/Gin-HTTP-00ADD8?style=flat-square)](https://gin-gonic.com/)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE.txt)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Plugin-orange?style=flat-square)](https://claude.ai/code)
+[![Codex](https://img.shields.io/badge/Codex-CLI-10A37F?style=flat-square)](https://developers.openai.com/codex)
 
 [Installation](#installation) · [Usage](#usage) · [Configuration](#configuration) · [Architecture](#architecture) · [Command Reference](#command-reference) · [How It Works](#how-it-works) · [FAQ](#faq)
 
@@ -69,15 +70,37 @@ When you see:
 RAG server started (PID: xxxxx) at http://127.0.0.1:8765
 ```
 
-**Restart Claude Code and you're ready to go.**
+Claude Code picks up the existing `.claude` configuration after restart.
 
 > The script is idempotent — safe to run multiple times. If you move the project directory, re-run to update paths.
+
+### Codex CLI setup
+
+This repository includes a project-scoped Codex hook and a `local-rag` skill.
+Start Codex from the repository root, then use `/hooks` once to review and
+trust **Searching Local RAG knowledge base**. Codex intentionally skips new
+project hooks until they are trusted.
+
+```bash
+codex
+```
+
+The hook performs automatic retrieval only after RAG mode is enabled. In Codex,
+ask `$local-rag auto-retrieval on`; use `$local-rag auto-retrieval off` to
+disable it. The `.rag-mode` flag is per working directory.
 
 ---
 
 ## Usage
 
-All operations are done inside the Claude Code chat — type `/rag` to trigger autocomplete.
+In Claude Code, use the `/rag*` commands below. In Codex, invoke the included
+skill with `$local-rag` (or ask naturally, such as “add this PDF to Local RAG”):
+
+```text
+$local-rag ingest ./product-guide.pdf --source product-guide
+$local-rag retrieve How does source sync handle retries?
+$local-rag status
+```
 
 ### 📥 Ingest Documents
 
@@ -487,6 +510,7 @@ local-rag/
 │   └── requirements.txt
 ├── config.yaml                 # Configuration
 ├── start.sh / stop.sh          # Lifecycle scripts
+├── .codex/                     # Codex hook configuration and RAG workflow
 └── .claude/
     ├── hook.sh                 # Claude Code hook
     ├── settings.json           # Hook registration

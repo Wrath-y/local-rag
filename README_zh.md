@@ -2,13 +2,14 @@
 
 # 🧠 Local RAG
 
-**赋予 Claude Code 持久长期记忆 —— 从你的文档中精准检索知识**
+**赋予 Claude Code 和 Codex 持久长期记忆 —— 从你的文档中精准检索知识**
 
 [![Go](https://img.shields.io/badge/Go-1.25.4+-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev/)
 [![SQLite](https://img.shields.io/badge/SQLite-vec0+FTS5-003B57?style=flat-square&logo=sqlite&logoColor=white)](https://github.com/asg017/sqlite-vec)
 [![Gin](https://img.shields.io/badge/Gin-HTTP-00ADD8?style=flat-square)](https://gin-gonic.com/)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE.txt)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Plugin-orange?style=flat-square)](https://claude.ai/code)
+[![Codex](https://img.shields.io/badge/Codex-CLI-10A37F?style=flat-square)](https://developers.openai.com/codex)
 
 [安装](#安装) · [使用方法](#使用方法) · [检索评估](#检索评估) · [配置](#配置) · [架构](#架构) · [命令汇总](#命令汇总) · [工作原理](#工作原理) · [FAQ](#faq)
 
@@ -68,15 +69,36 @@ cd local-rag
 RAG server started (PID: xxxxx) at http://127.0.0.1:8765
 ```
 
-**重启 Claude Code 后即可使用。**
+重启 Claude Code 后即可加载已有的 `.claude` 配置。
 
 > 脚本可重复运行，不产生重复配置。移动项目目录需重新运行更新路径。
+
+### Codex CLI 配置
+
+本仓库已包含项目级 Codex hook 和 `local-rag` skill。请在仓库根目录启动
+Codex，然后执行一次 `/hooks`，审核并信任 **Searching Local RAG knowledge base**。
+Codex 会主动跳过尚未信任的项目 hook。
+
+```bash
+codex
+```
+
+自动检索仅会在开启 RAG 模式后执行。在 Codex 中输入
+`$local-rag auto-retrieval on` 开启，输入 `$local-rag auto-retrieval off`
+关闭；`.rag-mode` 标志按当前工作目录隔离。
 
 ---
 
 ## 使用方法
 
-所有操作在 Claude Code 对话框完成，输入 `/rag` 触发补全提示。
+Claude Code 中继续使用下方的 `/rag*` 命令。Codex 中使用内置的
+`$local-rag` skill（也可直接自然语言描述需求，例如“将这个 PDF 加入 Local RAG”）：
+
+```text
+$local-rag ingest ./product-guide.pdf --source product-guide
+$local-rag retrieve 增量来源同步如何处理重试？
+$local-rag status
+```
 
 ### 📥 存入文档
 
@@ -574,6 +596,7 @@ local-rag/
 │   └── requirements.txt
 ├── config.yaml                 # 配置文件
 ├── start.sh / stop.sh          # 生命周期脚本
+├── .codex/                     # Codex hook 配置和 RAG 工作流
 └── .claude/
     ├── hook.sh                 # Claude Code hook
     ├── settings.json           # Hook 注册

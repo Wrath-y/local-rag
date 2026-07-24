@@ -1,0 +1,17 @@
+{
+  "description": "Inject Local RAG results for prompts when .rag-mode is enabled.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$(git rev-parse --show-toplevel)/.codex/hooks/rag-user-prompt-submit.sh\"",
+            "timeout": 4,
+            "statusMessage": "Searching Local RAG knowledge base"
+          }
+        ]
+      }
+    ]
+  }
+}
