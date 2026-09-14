@@ -76,6 +76,10 @@ type SubmissionCheck struct {
 func CheckExistingSubmission(ctx context.Context, repository ExistingSnapshotReader, namespace, version, contentHash string) (SubmissionCheck, *Error) {
 	snapshot, found, err := repository.LookupGraphSnapshot(ctx, namespace, version)
 	if err != nil {
+		var public *Error
+		if errors.As(err, &public) {
+			return SubmissionCheck{}, public
+		}
 		return SubmissionCheck{}, NewError(CodeGraphStoreUnavailable, nil, err)
 	}
 	if !found {
@@ -123,6 +127,10 @@ func (s *Service) put(ctx context.Context, namespace, version string, request Re
 	if err != nil {
 		if errors.Is(err, ErrSnapshotAlreadyAccepted) {
 			return CheckExistingSubmission(ctx, s.repository, namespace, version, request.ContentHash)
+		}
+		var public *Error
+		if errors.As(err, &public) {
+			return SubmissionCheck{}, public
 		}
 		return SubmissionCheck{}, NewError(CodeGraphStoreUnavailable, nil, err)
 	}

@@ -82,6 +82,11 @@ func TestGraphRequestIDReplacesInvalidOrMissingValue(t *testing.T) {
 
 func TestWriteGraphErrorMapsEveryStableCode(t *testing.T) {
 	testCases := map[graphsnapshot.Code]int{
+		graphsnapshot.CodeInvalidNamespaceRequest:       http.StatusBadRequest,
+		graphsnapshot.CodeNamespaceGenerationConflict:   http.StatusConflict,
+		graphsnapshot.CodeReferenceRevisionConflict:     http.StatusConflict,
+		graphsnapshot.CodeNamespaceDeleting:             http.StatusConflict,
+		graphsnapshot.CodeSnapshotReferenced:            http.StatusConflict,
 		graphsnapshot.CodeInvalidSnapshotRequest:        http.StatusBadRequest,
 		graphsnapshot.CodeDuplicateNodeID:               http.StatusUnprocessableEntity,
 		graphsnapshot.CodeDuplicateEdgeID:               http.StatusUnprocessableEntity,
@@ -95,6 +100,7 @@ func TestWriteGraphErrorMapsEveryStableCode(t *testing.T) {
 		graphsnapshot.CodeSnapshotNotFound:              http.StatusNotFound,
 		graphsnapshot.CodeTaskNotFound:                  http.StatusNotFound,
 		graphsnapshot.CodeSnapshotNotReady:              http.StatusConflict,
+		graphsnapshot.CodeActiveVersionConflict:         http.StatusConflict,
 		graphsnapshot.CodeActiveSnapshotDeleteForbidden: http.StatusConflict,
 		graphsnapshot.CodeSnapshotWriteInProgress:       http.StatusConflict,
 		graphsnapshot.CodeInvalidGraphQuery:             http.StatusBadRequest,

@@ -33,6 +33,9 @@ func (s *Store) AdmitGraphRebuild(ctx context.Context, namespace, version, idemp
 		return graphsnapshot.Task{}, false, err
 	}
 	defer tx.Rollback()
+	if err = namespaceRequireActive(ctx, tx, namespace); err != nil {
+		return graphsnapshot.Task{}, false, err
+	}
 
 	var sourceHash string
 	var expectedNodes, expectedEdges, actualNodes, actualEdges int

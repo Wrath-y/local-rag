@@ -1,14 +1,22 @@
 package sidecar
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/Wrath-y/local-rag/internal/lifecycle"
 )
 
 // waitForFile polls path until the file appears or timeout elapses.
@@ -95,7 +103,7 @@ func TestHelperProcess(t *testing.T) {
 	switch mode {
 	case "cooperative":
 		ch := make(chan os.Signal, 1)
-		signal.Notify(ch, syscall.SIGTERM)
+		signal.Notify(ch, syscall.SIGTERM, os.Interrupt)
 
 		// Signal readiness only after the handler is registered, ensuring the
 		// parent cannot race-send SIGTERM before this process is listening.
@@ -121,7 +129,7 @@ func TestHelperProcess(t *testing.T) {
 		// binaries because Go's runtime restores the default OS handler for
 		// unhandled signals.  signal.Notify+drain is the correct approach.
 		sigCh := make(chan os.Signal, 8)
-		signal.Notify(sigCh, syscall.SIGTERM)
+		signal.Notify(sigCh, syscall.SIGTERM, os.Interrupt)
 		go func() {
 			for range sigCh {
 			} // discard all SIGTERMs
@@ -173,7 +181,8 @@ func TestManager_StopTerminatesCooperativeProcess(t *testing.T) {
 	)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
-	if err := cmd.Start(); err != nil {
+	identity, err := lifecycle.StartProcess(cmd)
+	if err != nil {
 		t.Fatalf("could not start helper process: %v", err)
 	}
 
@@ -192,6 +201,7 @@ func TestManager_StopTerminatesCooperativeProcess(t *testing.T) {
 	})
 	m.mu.Lock()
 	m.cmd = cmd
+	m.identity = identity
 	m.running = true
 	m.mu.Unlock()
 
@@ -253,7 +263,8 @@ func TestManager_StopKillsUncooperativeProcessAfterTimeout(t *testing.T) {
 	)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
-	if err := cmd.Start(); err != nil {
+	identity, err := lifecycle.StartProcess(cmd)
+	if err != nil {
 		t.Fatalf("could not start helper process: %v", err)
 	}
 
@@ -272,6 +283,7 @@ func TestManager_StopKillsUncooperativeProcessAfterTimeout(t *testing.T) {
 	})
 	m.mu.Lock()
 	m.cmd = cmd
+	m.identity = identity
 	m.running = true
 	m.mu.Unlock()
 
@@ -297,5 +309,67 @@ func TestManager_StopKillsUncooperativeProcessAfterTimeout(t *testing.T) {
 	// Process must be reaped — Signal(0) should fail for a dead process.
 	if err := cmd.Process.Signal(syscall.Signal(0)); err == nil {
 		t.Error("child process appears still alive after Stop(); was not reaped by SIGKILL")
+	}
+}
+
+// 伪健康服务即使返回 200，也不能替代本轮子进程及其模型能力。
+func TestHealthRequiresInstanceSchemaAndConfiguredModels(t *testing.T) {
+	valid := map[string]any{"service": "local-rag-sidecar", "schema_version": "1.0", "status": "ok", "instance_id": "current", "models": map[string]string{"embedding": "embed", "rerank": "rerank"}}
+	for _, test := range []struct {
+		name, key string
+		value     any
+		want      bool
+	}{
+		{"ready", "", nil, true},
+		{"other service", "service", "other", false},
+		{"wrong schema", "schema_version", "2.0", false},
+		{"old process", "instance_id", "previous", false},
+		{"unavailable", "status", "unavailable", false},
+		{"missing model", "models", map[string]string{"embedding": "embed"}, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			doc := map[string]any{}
+			for key, value := range valid {
+				doc[key] = value
+			}
+			if test.key != "" {
+				doc[test.key] = test.value
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _ = json.NewEncoder(w).Encode(doc) }))
+			defer server.Close()
+			m := New(Config{Port: server.Listener.Addr().(*net.TCPAddr).Port, EmbedModel: "embed", RerankModel: "rerank"})
+			m.token = "current"
+			if got := m.checkHealth(); got != test.want {
+				t.Fatalf("健康结果 %v，期望 %v", got, test.want)
+			}
+		})
+	}
+}
+
+// 重启排队期间同时停止，取消必须先于任何后续进程创建。
+func TestConcurrentStopPreventsQueuedRestart(t *testing.T) {
+	m := New(Config{Provider: "local", PythonExecutable: "missing-sidecar-must-never-launch"})
+	m.ctx, m.cancel = context.WithCancel(context.Background())
+	m.opMu.Lock()
+	restarted := make(chan struct{})
+	go func() { m.restart(m.ctx); close(restarted) }()
+	var wg sync.WaitGroup
+	for i := 0; i < 12; i++ {
+		wg.Add(1)
+		go func() { defer wg.Done(); m.Stop() }()
+	}
+	select {
+	case <-m.ctx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("停止未取消重启上下文")
+	}
+	m.opMu.Unlock()
+	wg.Wait()
+	<-restarted
+	if m.cmd != nil || m.Running() {
+		t.Fatal("停止后仍存在 sidecar 进程")
+	}
+	if err := m.Start(); err == nil {
+		t.Fatal("已停止的管理器不应重新启动")
 	}
 }

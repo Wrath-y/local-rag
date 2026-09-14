@@ -92,7 +92,7 @@ func (p *LocalEmbedProvider) Dims() int { return p.dims }
 // Probe checks the local sidecar's capability endpoint without submitting
 // embedding content. It is intentionally suitable for bounded health checks.
 func (p *LocalEmbedProvider) Probe(ctx context.Context) error {
-	return probeLocalSidecar(ctx, p.client, p.baseURL)
+	return probeLocalSidecar(ctx, p.client, p.baseURL, "embedding", p.model)
 }
 
 // ---------------------------------------------------------------------------
@@ -163,10 +163,10 @@ func (p *LocalRerankProvider) Rerank(ctx context.Context, query string, document
 // Probe checks the local sidecar's capability endpoint without submitting a
 // query or documents.
 func (p *LocalRerankProvider) Probe(ctx context.Context) error {
-	return probeLocalSidecar(ctx, p.client, p.baseURL)
+	return probeLocalSidecar(ctx, p.client, p.baseURL, "rerank", p.model)
 }
 
-func probeLocalSidecar(ctx context.Context, client *http.Client, baseURL string) error {
+func probeLocalSidecar(ctx context.Context, client *http.Client, baseURL, capability, model string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/health", nil)
 	if err != nil {
 		return fmt.Errorf("provider probe request: %w", err)
@@ -178,6 +178,17 @@ func probeLocalSidecar(ctx context.Context, client *http.Client, baseURL string)
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		return fmt.Errorf("provider probe status %d", response.StatusCode)
+	}
+	// 健康必须证明服务身份和当前模型已加载，不能把任意 HTTP 200 当作就绪。
+	var health struct {
+		Service string            `json:"service"`
+		Schema  string            `json:"schema_version"`
+		Status  string            `json:"status"`
+		Models  map[string]string `json:"models"`
+	}
+	decoder := json.NewDecoder(io.LimitReader(response.Body, 65536))
+	if decoder.Decode(&health) != nil || decoder.Decode(new(any)) != io.EOF || health.Service != "local-rag-sidecar" || health.Schema != "1.0" || health.Status != "ok" || health.Models[capability] != model {
+		return fmt.Errorf("本地模型服务身份、协议或已加载模型不匹配")
 	}
 	return nil
 }

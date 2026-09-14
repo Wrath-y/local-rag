@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
-	"os/signal"
-	"syscall"
+	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -17,6 +19,7 @@ import (
 	"github.com/Wrath-y/local-rag/internal/config"
 	"github.com/Wrath-y/local-rag/internal/graphsnapshot"
 	"github.com/Wrath-y/local-rag/internal/handler"
+	"github.com/Wrath-y/local-rag/internal/lifecycle"
 	"github.com/Wrath-y/local-rag/internal/management"
 	"github.com/Wrath-y/local-rag/internal/mcpserver"
 	"github.com/Wrath-y/local-rag/internal/observe"
@@ -86,37 +89,67 @@ func (r observedReranker) Rerank(ctx context.Context, query string, documents []
 }
 
 func main() {
-	cfgPath := "config.yaml"
-	if p := os.Getenv("RAG_CONFIG"); p != "" {
-		cfgPath = p
-	}
-
-	cfg, err := config.Load(cfgPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to load config %q: %v\n", cfgPath, err)
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "启动或运行失败：%v\n", err)
 		os.Exit(1)
 	}
+}
 
-	// MCP mode: run as MCP server over stdio (no HTTP, no gin)
-	if len(os.Args) > 1 && os.Args[1] == "mcp" {
-		runMCP(cfg)
-		return
+// run 将退出码留给最外层入口，保证失败路径同样执行 sidecar 和存储清理。
+func run() error {
+	args := os.Args[1:]
+	if len(args) > 0 && args[0] == "lifecycle" {
+		return lifecycle.Run(args[1:], os.Stdout)
 	}
+	mcpMode := len(args) > 0 && args[0] == "mcp"
+	if len(args) > 0 && (args[0] == "serve" || args[0] == "mcp") {
+		args = args[1:]
+	}
+	flags := flag.NewFlagSet("rag-server", flag.ContinueOnError)
+	cfgPath := os.Getenv("RAG_CONFIG")
+	if cfgPath == "" {
+		cfgPath = "config.yaml"
+	}
+	flags.StringVar(&cfgPath, "config", cfgPath, "配置文件路径")
+	listen := flags.String("listen", "", "监听地址，例如 127.0.0.1:8765")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return fmt.Errorf("存在未知参数：%v", flags.Args())
+	}
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		return fmt.Errorf("配置读取失败 %q：%w", cfgPath, err)
+	}
+	if *listen == "" {
+		*listen = serverAddress(cfg.Server.Port)
+	}
+	if _, _, err := net.SplitHostPort(*listen); err != nil {
+		return fmt.Errorf("监听地址无效：%w", err)
+	}
+	cleanupJob, err := lifecycle.EnterJob()
+	if err != nil {
+		return fmt.Errorf("进程归属初始化失败：%w", err)
+	}
+	defer cleanupJob()
+	if mcpMode {
+		return runMCP(cfg)
+	}
+	shutdownSignal, stopSignals, err := lifecycle.ShutdownContext()
+	if err != nil {
+		return fmt.Errorf("停止通知初始化失败：%w", err)
+	}
+	defer stopSignals()
 
 	observe.InitLogger(cfg.Log.Level, cfg.Log.Format)
 	observe.InitMetrics()
 
-	// Start sidecar (only used when embedding provider is "local").
-	sc := sidecar.New(sidecar.Config{
-		Provider:       cfg.Embedding.Provider,
-		Port:           cfg.Sidecar.Port,
-		HealthInterval: time.Duration(cfg.Sidecar.HealthInterval) * time.Second,
-		HealthRetries:  cfg.Sidecar.HealthRetries,
-		StartupTimeout: time.Duration(cfg.Sidecar.StartupTimeout) * time.Second,
-	})
+	// 嵌入或重排任一使用本地模型时，先等待 sidecar 及配置模型就绪。
+	sc := sidecar.New(sidecarConfig(cfg))
 	if err := sc.Start(); err != nil {
 		slog.Error("sidecar start failed", "err", err)
-		os.Exit(1)
+		return err
 	}
 	defer sc.Stop()
 
@@ -124,13 +157,13 @@ func main() {
 	embedder, err := provider.NewEmbedProvider(cfg.Embedding, sc.URL())
 	if err != nil {
 		slog.Error("embed provider init failed", "err", err)
-		os.Exit(1)
+		return err
 	}
 
 	reranker, err := provider.NewRerankProvider(cfg.Rerank, sc.URL())
 	if err != nil {
 		slog.Error("rerank provider init failed", "err", err)
-		os.Exit(1)
+		return err
 	}
 	vectorHealth := &operability.ProviderStateCache{Name: "vector", Provider: cfg.Embedding.Provider, Model: cfg.Embedding.Model, Probe: optionalProviderProbe(embedder)}
 	embedder = observedEmbedder{EmbedProvider: embedder, health: vectorHealth}
@@ -151,7 +184,7 @@ func main() {
 	st, err := store.New(cfg.Storage.DBPath, cfg.Embedding.Dims)
 	if err != nil {
 		slog.Error("store init failed", "err", err)
-		os.Exit(1)
+		return err
 	}
 	stores := handler.NewStoreLifecycle(st)
 	defer stores.Close()
@@ -204,9 +237,11 @@ func main() {
 	r.Use(gin.Recovery(), corsMiddleware())
 	v1 := r.Group("/v1")
 	v1.Use(handler.GraphRequestID())
+	h.RegisterNamespaceLifecycle(v1)
 	v1.PUT("/graphs/:namespace/snapshots/:version", h.PutGraphSnapshot)
 	v1.GET("/graphs/:namespace/snapshots/:version", h.GetGraphSnapshot)
 	v1.POST("/graphs/:namespace/snapshots/:version/activate", h.ActivateGraphSnapshot)
+	v1.POST("/graphs/:namespace/active/query", h.QueryActiveGraphSnapshot)
 	v1.DELETE("/graphs/:namespace/snapshots/:version", h.DeleteGraphSnapshot)
 	v1.POST("/graphs/:namespace/snapshots/:version/rebuild", h.RebuildGraphSnapshot)
 	v1.POST("/graphs/:namespace/traverse", h.TraverseGraph)
@@ -253,7 +288,13 @@ func main() {
 	r.POST("/import", h.Import)
 
 	// Observability routes.
-	r.GET("/health", h.Health)
+	r.GET("/health", func(c *gin.Context) {
+		// 随机实例标识供本轮启动验证，避免端口争用时误认外部健康响应。
+		if id := os.Getenv("RAG_INSTANCE_ID"); id != "" {
+			c.Header("X-Local-RAG-Instance", id)
+		}
+		h.Health(c)
+	})
 	r.GET("/metrics", h.Metrics)
 	r.GET("/storage/integrity-check", h.IntegrityCheck)
 
@@ -273,26 +314,51 @@ func main() {
 	r.GET("/agent/sessions", h.AgentListSessions)
 	r.DELETE("/agent/session/:id", h.AgentDeleteSession)
 
-	server := &http.Server{Addr: serverAddress(cfg.Server.Port), Handler: r}
+	server := &http.Server{Addr: *listen, Handler: r}
 
-	// Graceful shutdown stops new HTTP admission before workers and storage.
-	go func() {
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-		<-sigCh
-		slog.Info("shutting down")
+	// 先安装信号处理；等待 HTTP 及 worker、存储清理完成后才能返回 main。
+	serveDone := make(chan error, 1)
+	go func() { serveDone <- server.ListenAndServe() }()
+	slog.Info("服务启动", "addr", server.Addr)
+	select {
+	case err := <-serveDone:
+		if err != nil && err != http.ErrServerClosed {
+			return err
+		}
+		return nil
+	case <-shutdownSignal.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		if err := shutdownOrdered(shutdownCtx, server, graphService, h, sc, stores); err != nil {
-			slog.Error("store shutdown failed", "err", err)
+		err := shutdownOrdered(shutdownCtx, server, graphService, h, sc, stores)
+		if err != nil {
+			_ = server.Close()
 		}
-	}()
-
-	slog.Info("server starting", "addr", server.Addr)
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		slog.Error("server error", "err", err)
-		os.Exit(1)
+		<-serveDone
+		return err
 	}
+}
+
+func sidecarConfig(cfg *config.Config) sidecar.Config {
+	out := sidecar.Config{Provider: "disabled", Port: cfg.Sidecar.Port, HealthInterval: time.Duration(cfg.Sidecar.HealthInterval) * time.Second, HealthRetries: cfg.Sidecar.HealthRetries, StartupTimeout: time.Duration(cfg.Sidecar.StartupTimeout) * time.Second}
+	if cfg.Embedding.Provider == "local" {
+		out.Provider = "local"
+		out.EmbedModel = cfg.Embedding.Model
+	}
+	if cfg.Rerank.Provider == "local" {
+		out.Provider = "local"
+		out.RerankModel = cfg.Rerank.Model
+	}
+	// 独立启动和编排均优先使用已经准备好的虚拟环境；不会在运行中安装依赖。
+	python := filepath.Join("sidecar", ".venv", "bin", "python3")
+	if runtime.GOOS == "windows" {
+		python = filepath.Join("sidecar", ".venv", "Scripts", "python.exe")
+	}
+	if _, err := os.Stat(python); err == nil {
+		if absolute, err := filepath.Abs(python); err == nil {
+			out.PythonExecutable = absolute
+		}
+	}
+	return out
 }
 
 func serverAddress(port int) string { return fmt.Sprintf("127.0.0.1:%d", port) }
@@ -300,21 +366,15 @@ func serverAddress(port int) string { return fmt.Sprintf("127.0.0.1:%d", port) }
 // runMCP starts the server in MCP (Model Context Protocol) mode.
 // It communicates over stdin/stdout using JSON-RPC, NOT HTTP.
 // Other agents (Claude Code, Cursor, etc.) connect to this directly.
-func runMCP(cfg *config.Config) {
+func runMCP(cfg *config.Config) error {
 	// In MCP mode, only log errors to stderr (stdout is the protocol channel).
 	observe.InitLogger("error", "text")
 
 	// Start sidecar if needed.
-	sc := sidecar.New(sidecar.Config{
-		Provider:       cfg.Embedding.Provider,
-		Port:           cfg.Sidecar.Port,
-		HealthInterval: time.Duration(cfg.Sidecar.HealthInterval) * time.Second,
-		HealthRetries:  cfg.Sidecar.HealthRetries,
-		StartupTimeout: time.Duration(cfg.Sidecar.StartupTimeout) * time.Second,
-	})
+	sc := sidecar.New(sidecarConfig(cfg))
 	if err := sc.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "sidecar start failed: %v\n", err)
-		os.Exit(1)
+		return err
 	}
 	defer sc.Stop()
 
@@ -322,7 +382,7 @@ func runMCP(cfg *config.Config) {
 	embedder, err := provider.NewEmbedProvider(cfg.Embedding, sc.URL())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "embed provider: %v\n", err)
-		os.Exit(1)
+		return err
 	}
 	reranker, _ := provider.NewRerankProvider(cfg.Rerank, sc.URL())
 	llm, _ := provider.NewLLMProvider(cfg.LLM)
@@ -331,7 +391,7 @@ func runMCP(cfg *config.Config) {
 	st, err := store.New(cfg.Storage.DBPath, cfg.Embedding.Dims)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "store init: %v\n", err)
-		os.Exit(1)
+		return err
 	}
 	defer st.Close()
 
@@ -356,6 +416,7 @@ func runMCP(cfg *config.Config) {
 	}
 	if err := mcpserver.Run(context.Background(), deps); err != nil {
 		fmt.Fprintf(os.Stderr, "MCP server error: %v\n", err)
-		os.Exit(1)
+		return err
 	}
+	return nil
 }

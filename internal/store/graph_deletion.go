@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/Wrath-y/local-rag/internal/graphsnapshot"
 )
 
 // DeleteGraphSnapshot removes one inactive, quiescent snapshot and its
@@ -19,6 +20,16 @@ func (s *Store) DeleteGraphSnapshot(ctx context.Context, namespace, version stri
 		return err
 	}
 	defer tx.Rollback()
+	if err = namespaceRequireActive(ctx, tx, namespace); err != nil {
+		return err
+	}
+	var refs int
+	if err = tx.QueryRowContext(ctx, `SELECT count(*) FROM graph_snapshot_references WHERE namespace=? AND version=?`, namespace, version).Scan(&refs); err != nil {
+		return err
+	}
+	if refs > 0 {
+		return namespaceError(graphsnapshot.CodeSnapshotReferenced, nil)
+	}
 	var active string
 	if err = tx.QueryRowContext(ctx, `SELECT active_version FROM graph_namespace_heads WHERE namespace=?`, namespace).Scan(&active); err == nil && active == version {
 		return fmt.Errorf("%w: %s/%s", ErrGraphSnapshotActive, namespace, version)

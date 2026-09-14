@@ -23,14 +23,14 @@ func TestOpenAPIGraphLifecycleDocumentHasRequiredSurface(t *testing.T) {
 	if !ok {
 		t.Fatal("paths missing")
 	}
-	for _, path := range []string{"/v1/graphs/{namespace}/snapshots/{version}", "/v1/graphs/{namespace}/snapshots/{version}/activate", "/v1/graphs/{namespace}/snapshots/{version}/rebuild", "/v1/graphs/{namespace}/traverse", "/v1/graphs/{namespace}/paths", "/v1/graphs/{namespace}/retrieve", "/v1/tasks/{task_id}", "/health"} {
+	for _, path := range []string{"/v1/graphs/{namespace}/snapshots/{version}", "/v1/graphs/{namespace}/snapshots/{version}/activate", "/v1/graphs/{namespace}/active/query", "/v1/graphs/{namespace}/snapshots/{version}/rebuild", "/v1/graphs/{namespace}/traverse", "/v1/graphs/{namespace}/paths", "/v1/graphs/{namespace}/retrieve", "/v1/tasks/{task_id}", "/health", "/v1/graphs/{namespace}/snapshots/query", "/v1/graphs/{namespace}/references/sync", "/v1/graphs/{namespace}/delete", "/v1/namespace-deletion-tasks/{task_id}", "/v1/namespace-deletion-tasks/{task_id}/retry"} {
 		if _, ok := paths[path]; !ok {
 			t.Fatalf("path %s missing", path)
 		}
 	}
 	components := document["components"].(map[string]any)
 	schemas := components["schemas"].(map[string]any)
-	for _, name := range []string{"SnapshotRequest", "Snapshot", "Task", "Component", "GraphError", "GraphRetrieveRequest", "GraphRetrieveResponse", "RetrievalGeneration", "RebuildRequest", "RebuildSubmission", "Health"} {
+	for _, name := range []string{"SnapshotRequest", "Snapshot", "Task", "Component", "GraphError", "GraphRetrieveRequest", "GraphRetrieveResponse", "RetrievalGeneration", "RebuildRequest", "RebuildSubmission", "Health", "ActivationRequest", "ActiveSnapshot", "NamespaceQuery", "NamespacePage", "NamespaceReferenceSync", "NamespaceReferenceResult", "NamespaceDeleteRequest", "NamespaceDeletionTask"} {
 		if _, ok := schemas[name]; !ok {
 			t.Fatalf("schema %s missing", name)
 		}

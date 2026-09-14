@@ -54,6 +54,11 @@ docs/*
 !docs/CITATIONS.md
 !docs/agent-tools.md
 !docs/retrieval-feedback.md
+!docs/conditional-activation-v1.md
+!docs/namespace-lifecycle-v1.md
+!docs/contracts/
+docs/contracts/*
+!docs/contracts/graph-snapshot-hash-v1/
 openspec
 
 # Go build artifacts
@@ -67,3 +72,6 @@ backups/
 # Python sidecar
 sidecar/.venv/
 sidecar/models/
+
+# 生命周期临时状态与控制程序
+.run/

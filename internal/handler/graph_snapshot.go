@@ -1,8 +1,11 @@
 package handler
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -41,10 +44,20 @@ type GraphSnapshotLifecycle interface {
 	DeleteGraphSnapshot(context.Context, string, string) error
 }
 
+// GraphConditionalActivation is advertised only when the installed lifecycle
+// implements both compare-and-swap and consistent head reconciliation.
+type GraphConditionalActivation interface {
+	ActivateGraphSnapshotConditional(context.Context, string, string, *string) (bool, error)
+	LookupActiveGraphSnapshot(context.Context, string) (graphsnapshot.ActiveSnapshot, error)
+}
+
 // PutGraphSnapshot accepts an immutable graph snapshot. The durable task is
 // keyed by the canonical final content hash, so Idempotency-Key is deliberately
 // neither read nor interpreted here.
 func (h *Handler) PutGraphSnapshot(c *gin.Context) {
+	if !h.namespaceAccessAllowed(c) {
+		return
+	}
 	namespace, version, ok := graphSnapshotIdentity(c)
 	if !ok {
 		return
@@ -91,6 +104,9 @@ func (h *Handler) PutGraphSnapshot(c *gin.Context) {
 // GetGraphSnapshot returns the same canonical lifecycle resource used for a
 // PUT replay. It cannot inspect staging or unselected derived generations.
 func (h *Handler) GetGraphSnapshot(c *gin.Context) {
+	if !h.namespaceAccessAllowed(c) {
+		return
+	}
 	namespace, version, ok := graphSnapshotIdentity(c)
 	if !ok {
 		return
@@ -134,6 +150,9 @@ func (h *Handler) GetGraphTask(c *gin.Context) {
 // ActivateGraphSnapshot switches only a ready snapshot into the namespace's
 // active pointer. Replays are successful and report changed=false.
 func (h *Handler) ActivateGraphSnapshot(c *gin.Context) {
+	if !h.namespaceAccessAllowed(c) {
+		return
+	}
 	namespace, version, ok := graphSnapshotIdentity(c)
 	if !ok {
 		return
@@ -142,7 +161,29 @@ func (h *Handler) ActivateGraphSnapshot(c *gin.Context) {
 		writeGraphError(c, graphsnapshot.NewError(graphsnapshot.CodeGraphStoreUnavailable, nil, nil))
 		return
 	}
-	changed, err := h.graphLifecycle.ActivateGraphSnapshot(c.Request.Context(), namespace, version)
+	var request struct {
+		Expected json.RawMessage `json:"expected_active_version"`
+	}
+	if !decodeOptionalGraphActivationBody(c, graphLimits(h.deps.Config).maxPayloadBytes, &request) {
+		return
+	}
+	var changed bool
+	var err error
+	if len(request.Expected) > 0 {
+		var expected *string
+		if err := json.Unmarshal(request.Expected, &expected); err != nil || (expected != nil && *expected == "") {
+			writeGraphError(c, graphsnapshot.NewError(graphsnapshot.CodeInvalidSnapshotRequest, map[string]any{"field": "expected_active_version"}, err))
+			return
+		}
+		conditional, supported := h.graphLifecycle.(GraphConditionalActivation)
+		if !supported {
+			writeGraphError(c, graphsnapshot.NewError(graphsnapshot.CodeGraphStoreUnavailable, map[string]any{"capability": graphsnapshot.ConditionalActivationCapability}, nil))
+			return
+		}
+		changed, err = conditional.ActivateGraphSnapshotConditional(c.Request.Context(), namespace, version, expected)
+	} else {
+		changed, err = h.graphLifecycle.ActivateGraphSnapshot(c.Request.Context(), namespace, version)
+	}
 	if err != nil {
 		writeGraphLifecycleError(c, err)
 		return
@@ -150,9 +191,58 @@ func (h *Handler) ActivateGraphSnapshot(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"namespace": namespace, "active_version": version, "changed": changed})
 }
 
+// QueryActiveGraphSnapshot is a read-only POST that returns an explicit null
+// pair when no version has been activated, including an unknown namespace.
+func (h *Handler) QueryActiveGraphSnapshot(c *gin.Context) {
+	if !h.namespaceAccessAllowed(c) {
+		return
+	}
+	namespace := c.Param("namespace")
+	if namespace == "" {
+		writeGraphError(c, graphsnapshot.NewError(graphsnapshot.CodeInvalidSnapshotRequest, map[string]any{"field": "namespace"}, nil))
+		return
+	}
+	conditional, supported := h.graphLifecycle.(GraphConditionalActivation)
+	if !supported {
+		writeGraphError(c, graphsnapshot.NewError(graphsnapshot.CodeGraphStoreUnavailable, map[string]any{"capability": graphsnapshot.ConditionalActivationCapability}, nil))
+		return
+	}
+	if !decodeOptionalGraphActivationBody(c, graphLimits(h.deps.Config).maxPayloadBytes, &struct{}{}) {
+		return
+	}
+	active, err := conditional.LookupActiveGraphSnapshot(c.Request.Context(), namespace)
+	if err != nil {
+		writeGraphLifecycleError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, active)
+}
+
+func decodeOptionalGraphActivationBody(c *gin.Context, limit int, target any) bool {
+	body, err := io.ReadAll(http.MaxBytesReader(c.Writer, c.Request.Body, int64(limit)))
+	if err == nil && len(bytes.TrimSpace(body)) == 0 {
+		return true
+	}
+	if err == nil {
+		if bytes.Equal(bytes.TrimSpace(body), []byte("null")) {
+			err = errors.New("body must be an object")
+		} else {
+			err = graphsnapshot.DecodeStrictJSON(body, target)
+		}
+	}
+	if err != nil {
+		writeGraphError(c, graphsnapshot.NewError(graphsnapshot.CodeInvalidSnapshotRequest, map[string]any{"field": "body"}, err))
+		return false
+	}
+	return true
+}
+
 // DeleteGraphSnapshot deletes an inactive snapshot only after the storage
 // layer atomically confirms no durable writer is queued or running.
 func (h *Handler) DeleteGraphSnapshot(c *gin.Context) {
+	if !h.namespaceAccessAllowed(c) {
+		return
+	}
 	namespace, version, ok := graphSnapshotIdentity(c)
 	if !ok {
 		return
@@ -169,7 +259,15 @@ func (h *Handler) DeleteGraphSnapshot(c *gin.Context) {
 }
 
 func writeGraphLifecycleError(c *gin.Context, err error) {
+	var public *graphsnapshot.Error
+	if errors.As(err, &public) {
+		writeGraphError(c, public)
+		return
+	}
+	var conflict *store.GraphActiveVersionConflict
 	switch {
+	case errors.As(err, &conflict):
+		writeGraphError(c, graphsnapshot.NewError(graphsnapshot.CodeActiveVersionConflict, map[string]any{"namespace": conflict.Namespace, "expected_active_version": conflict.Expected, "active_version": conflict.Active}, nil))
 	case errors.Is(err, store.ErrGraphSnapshotNotFound):
 		writeGraphError(c, graphsnapshot.NewError(graphsnapshot.CodeSnapshotNotFound, nil, nil))
 	case errors.Is(err, store.ErrGraphSnapshotNotReady):

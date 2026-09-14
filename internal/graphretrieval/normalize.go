@@ -15,6 +15,9 @@ func DecodeRequest(body []byte) (Request, *graphsnapshot.Error) {
 }
 
 func Normalize(request Request) (NormalizedRequest, *graphsnapshot.Error) {
+	if err := request.Filters.Validate(); err != nil {
+		return NormalizedRequest{}, invalid("filters")
+	}
 	query := strings.TrimSpace(request.Query)
 	if query == "" {
 		return NormalizedRequest{}, invalid("query")
@@ -63,7 +66,7 @@ func normalizeFilter(request Request) (Filter, *graphsnapshot.Error) {
 			return Filter{}, invalid("relationship_kinds")
 		}
 	}
-	return Filter{SnapshotVersion: request.SnapshotVersion, NodeTypes: nodeTypes, EdgeTypes: edgeTypes, RelationshipKinds: relationshipKinds}, nil
+	return Filter{Filters: request.Filters, SnapshotVersion: request.SnapshotVersion, NodeTypes: nodeTypes, EdgeTypes: edgeTypes, RelationshipKinds: relationshipKinds}, nil
 }
 
 func normalizeLimit(field string, value *int, fallback, maximum int) (int, *graphsnapshot.Error) {

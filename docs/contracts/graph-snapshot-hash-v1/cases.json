@@ -1,0 +1,566 @@
+{
+  "fixture_version": "1.0",
+  "schema_version": "1.0",
+  "valid": [
+    {
+      "name": "empty-arrays",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"full\",\"content_hash\":\"ea2f3969fd4da4f50197a2a83a19f4516f43f7792effc9e7d6358cf855e110a4\",\"nodes\":[],\"edges\":[]}",
+      "expected_canonical": "{\"edges\":null,\"nodes\":null,\"schema_version\":\"1.0\"}",
+      "expected_hash": "ea2f3969fd4da4f50197a2a83a19f4516f43f7792effc9e7d6358cf855e110a4"
+    },
+    {
+      "name": "empty-null",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"full\",\"content_hash\":\"ea2f3969fd4da4f50197a2a83a19f4516f43f7792effc9e7d6358cf855e110a4\",\"nodes\":null,\"edges\":null}",
+      "expected_canonical": "{\"edges\":null,\"nodes\":null,\"schema_version\":\"1.0\"}",
+      "expected_hash": "ea2f3969fd4da4f50197a2a83a19f4516f43f7792effc9e7d6358cf855e110a4"
+    },
+    {
+      "name": "empty-omitted",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"full\",\"content_hash\":\"ea2f3969fd4da4f50197a2a83a19f4516f43f7792effc9e7d6358cf855e110a4\"}",
+      "expected_canonical": "{\"edges\":null,\"nodes\":null,\"schema_version\":\"1.0\"}",
+      "expected_hash": "ea2f3969fd4da4f50197a2a83a19f4516f43f7792effc9e7d6358cf855e110a4"
+    },
+    {
+      "name": "empty-delta",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"delta\",\"base_version\":\"v1\",\"content_hash\":\"ea2f3969fd4da4f50197a2a83a19f4516f43f7792effc9e7d6358cf855e110a4\",\"node_deletes\":[\"b\",\"a\"],\"edge_deletes\":[\"e\"]}",
+      "base": {
+        "schema_version": "1.0",
+        "nodes": [
+          {
+            "id": "a",
+            "type": "entity",
+            "label": "a",
+            "text": "a",
+            "properties": {},
+            "provenance": {}
+          },
+          {
+            "id": "b",
+            "type": "entity",
+            "label": "b",
+            "text": "b",
+            "properties": {},
+            "provenance": {}
+          }
+        ],
+        "edges": [
+          {
+            "id": "e",
+            "from": "a",
+            "to": "b",
+            "type": "knows",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {},
+            "provenance": {}
+          }
+        ]
+      },
+      "expected_canonical": "{\"edges\":null,\"nodes\":null,\"schema_version\":\"1.0\"}",
+      "expected_hash": "ea2f3969fd4da4f50197a2a83a19f4516f43f7792effc9e7d6358cf855e110a4"
+    },
+    {
+      "name": "unicode-ordering",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"full\",\"content_hash\":\"a58fefc3d6cf34c9fdff9cc05fb9c5240e433a75e5b312978a7156c8b5f51708\",\"nodes\":[{\"id\":\"😀\",\"type\":\"entity\",\"label\":\"😀\",\"text\":\"é / é / 中文 / <>& / \\n\",\"properties\":{\"😀\":\"astral\",\"\":\"private\",\"nested\":{\"z\":null,\"a\":true}},\"provenance\":{}},{\"id\":\"\",\"type\":\"entity\",\"label\":\"\",\"text\":\"é / é / 中文 / <>& / \\n\",\"properties\":{\"😀\":\"astral\",\"\":\"private\",\"nested\":{\"z\":null,\"a\":true}},\"provenance\":{}},{\"id\":\"á\",\"type\":\"entity\",\"label\":\"á\",\"text\":\"é / é / 中文 / <>& / \\n\",\"properties\":{\"😀\":\"astral\",\"\":\"private\",\"nested\":{\"z\":null,\"a\":true}},\"provenance\":{}},{\"id\":\"á\",\"type\":\"entity\",\"label\":\"á\",\"text\":\"é / é / 中文 / <>& / \\n\",\"properties\":{\"😀\":\"astral\",\"\":\"private\",\"nested\":{\"z\":null,\"a\":true}},\"provenance\":{}},{\"id\":\" a \",\"type\":\"entity\",\"label\":\" a \",\"text\":\"é / é / 中文 / <>& / \\n\",\"properties\":{\"😀\":\"astral\",\"\":\"private\",\"nested\":{\"z\":null,\"a\":true}},\"provenance\":{}}],\"edges\":[]}",
+      "expected_canonical": "{\"edges\":null,\"nodes\":[{\"id\":\" a \",\"label\":\" a \",\"properties\":{\"nested\":{\"a\":true,\"z\":null},\"😀\":\"astral\",\"\":\"private\"},\"provenance\":{},\"text\":\"é / é / 中文 / <>& / \\n\",\"type\":\"entity\"},{\"id\":\"á\",\"label\":\"á\",\"properties\":{\"nested\":{\"a\":true,\"z\":null},\"😀\":\"astral\",\"\":\"private\"},\"provenance\":{},\"text\":\"é / é / 中文 / <>& / \\n\",\"type\":\"entity\"},{\"id\":\"á\",\"label\":\"á\",\"properties\":{\"nested\":{\"a\":true,\"z\":null},\"😀\":\"astral\",\"\":\"private\"},\"provenance\":{},\"text\":\"é / é / 中文 / <>& / \\n\",\"type\":\"entity\"},{\"id\":\"\",\"label\":\"\",\"properties\":{\"nested\":{\"a\":true,\"z\":null},\"😀\":\"astral\",\"\":\"private\"},\"provenance\":{},\"text\":\"é / é / 中文 / <>& / \\n\",\"type\":\"entity\"},{\"id\":\"😀\",\"label\":\"😀\",\"properties\":{\"nested\":{\"a\":true,\"z\":null},\"😀\":\"astral\",\"\":\"private\"},\"provenance\":{},\"text\":\"é / é / 中文 / <>& / \\n\",\"type\":\"entity\"}],\"schema_version\":\"1.0\"}",
+      "expected_hash": "a58fefc3d6cf34c9fdff9cc05fb9c5240e433a75e5b312978a7156c8b5f51708"
+    },
+    {
+      "name": "number-rounding",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"full\",\"content_hash\":\"c4c7f9f3f1a14e1af6dfc7c909458773971825d40cdce6b65d2b86d42680ba17\",\"nodes\":[{\"id\":\"n\",\"type\":\"entity\",\"label\":\"n\",\"text\":\"n\",\"properties\":{\"numbers\":[333333333.33333329,1E30,4.50,2e-3,0.000000000000000000000000001,-0,9007199254740993,1e-999]},\"provenance\":{}}],\"edges\":[]}",
+      "expected_canonical": "{\"edges\":null,\"nodes\":[{\"id\":\"n\",\"label\":\"n\",\"properties\":{\"numbers\":[333333333.3333333,1e+30,4.5,0.002,1e-27,0,9007199254740992,0]},\"provenance\":{},\"text\":\"n\",\"type\":\"entity\"}],\"schema_version\":\"1.0\"}",
+      "expected_hash": "c4c7f9f3f1a14e1af6dfc7c909458773971825d40cdce6b65d2b86d42680ba17"
+    },
+    {
+      "name": "confidence-binary64",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"full\",\"content_hash\":\"9acc0d486a425e120cd531c9ac9f460b5cc44e9a14fd6c0e270599105c4aabb6\",\"nodes\":[{\"id\":\"a\",\"type\":\"entity\",\"label\":\"a\",\"text\":\"a\",\"properties\":{},\"provenance\":{}},{\"id\":\"b\",\"type\":\"entity\",\"label\":\"b\",\"text\":\"b\",\"properties\":{},\"provenance\":{}}],\"edges\":[{\"id\":\"e\",\"from\":\"a\",\"to\":\"b\",\"type\":\"knows\",\"relation_kind\":\"explicit\",\"confidence\":1.0000000000000001,\"properties\":{},\"provenance\":{}}]}",
+      "expected_canonical": "{\"edges\":[{\"confidence\":1,\"from\":\"a\",\"id\":\"e\",\"properties\":{},\"provenance\":{},\"relation_kind\":\"explicit\",\"to\":\"b\",\"type\":\"knows\"}],\"nodes\":[{\"id\":\"a\",\"label\":\"a\",\"properties\":{},\"provenance\":{},\"text\":\"a\",\"type\":\"entity\"},{\"id\":\"b\",\"label\":\"b\",\"properties\":{},\"provenance\":{},\"text\":\"b\",\"type\":\"entity\"}],\"schema_version\":\"1.0\"}",
+      "expected_hash": "9acc0d486a425e120cd531c9ac9f460b5cc44e9a14fd6c0e270599105c4aabb6"
+    },
+    {
+      "name": "inferred-aliases",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"full\",\"content_hash\":\"c519f1920573e41730b26838adfdd1fecd691b8acc7c3829b910c9f0d942c5c7\",\"nodes\":[{\"id\":\"a\",\"type\":\"entity\",\"label\":\"a\",\"text\":\"a\",\"properties\":{},\"provenance\":{}},{\"id\":\"b\",\"type\":\"entity\",\"label\":\"b\",\"text\":\"b\",\"properties\":{},\"provenance\":{}}],\"edges\":[{\"id\":\"e\",\"from\":\"a\",\"to\":\"b\",\"type\":\"knows\",\"relation_kind\":\"inferred\",\"confidence\":0.75,\"properties\":{},\"provenance\":{\"model\":\"extractor\",\"model_version\":\"v1\",\"generated_at\":\"2026-09-11T00:00:00Z\",\"evidence_refs\":[\"chapter:1\"]}}]}",
+      "expected_canonical": "{\"edges\":[{\"confidence\":0.75,\"from\":\"a\",\"id\":\"e\",\"properties\":{},\"provenance\":{\"evidence_refs\":[\"chapter:1\"],\"generated_at\":\"2026-09-11T00:00:00Z\",\"model\":\"extractor\",\"model_version\":\"v1\"},\"relation_kind\":\"inferred\",\"to\":\"b\",\"type\":\"knows\"}],\"nodes\":[{\"id\":\"a\",\"label\":\"a\",\"properties\":{},\"provenance\":{},\"text\":\"a\",\"type\":\"entity\"},{\"id\":\"b\",\"label\":\"b\",\"properties\":{},\"provenance\":{},\"text\":\"b\",\"type\":\"entity\"}],\"schema_version\":\"1.0\"}",
+      "expected_hash": "c519f1920573e41730b26838adfdd1fecd691b8acc7c3829b910c9f0d942c5c7"
+    },
+    {
+      "name": "full-final",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"full\",\"content_hash\":\"9acc0d486a425e120cd531c9ac9f460b5cc44e9a14fd6c0e270599105c4aabb6\",\"nodes\":[{\"id\":\"b\",\"type\":\"entity\",\"label\":\"b\",\"text\":\"b\",\"properties\":{},\"provenance\":{}},{\"id\":\"a\",\"type\":\"entity\",\"label\":\"a\",\"text\":\"a\",\"properties\":{},\"provenance\":{}}],\"edges\":[{\"id\":\"e\",\"from\":\"a\",\"to\":\"b\",\"type\":\"knows\",\"relation_kind\":\"explicit\",\"confidence\":1,\"properties\":{},\"provenance\":{}}]}",
+      "expected_canonical": "{\"edges\":[{\"confidence\":1,\"from\":\"a\",\"id\":\"e\",\"properties\":{},\"provenance\":{},\"relation_kind\":\"explicit\",\"to\":\"b\",\"type\":\"knows\"}],\"nodes\":[{\"id\":\"a\",\"label\":\"a\",\"properties\":{},\"provenance\":{},\"text\":\"a\",\"type\":\"entity\"},{\"id\":\"b\",\"label\":\"b\",\"properties\":{},\"provenance\":{},\"text\":\"b\",\"type\":\"entity\"}],\"schema_version\":\"1.0\"}",
+      "expected_hash": "9acc0d486a425e120cd531c9ac9f460b5cc44e9a14fd6c0e270599105c4aabb6"
+    },
+    {
+      "name": "delta-equivalent",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"delta\",\"base_version\":\"v1\",\"content_hash\":\"9acc0d486a425e120cd531c9ac9f460b5cc44e9a14fd6c0e270599105c4aabb6\",\"node_upserts\":[{\"id\":\"b\",\"type\":\"entity\",\"label\":\"b\",\"text\":\"b\",\"properties\":{},\"provenance\":{}}],\"edge_upserts\":[{\"id\":\"e\",\"from\":\"a\",\"to\":\"b\",\"type\":\"knows\",\"relation_kind\":\"explicit\",\"confidence\":1,\"properties\":{},\"provenance\":{}}]}",
+      "base": {
+        "schema_version": "1.0",
+        "nodes": [
+          {
+            "id": "a",
+            "type": "entity",
+            "label": "a",
+            "text": "a",
+            "properties": {},
+            "provenance": {}
+          }
+        ],
+        "edges": []
+      },
+      "expected_canonical": "{\"edges\":[{\"confidence\":1,\"from\":\"a\",\"id\":\"e\",\"properties\":{},\"provenance\":{},\"relation_kind\":\"explicit\",\"to\":\"b\",\"type\":\"knows\"}],\"nodes\":[{\"id\":\"a\",\"label\":\"a\",\"properties\":{},\"provenance\":{},\"text\":\"a\",\"type\":\"entity\"},{\"id\":\"b\",\"label\":\"b\",\"properties\":{},\"provenance\":{},\"text\":\"b\",\"type\":\"entity\"}],\"schema_version\":\"1.0\"}",
+      "expected_hash": "9acc0d486a425e120cd531c9ac9f460b5cc44e9a14fd6c0e270599105c4aabb6"
+    },
+    {
+      "name": "delta-replace",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"delta\",\"base_version\":\"v1\",\"content_hash\":\"9acc0d486a425e120cd531c9ac9f460b5cc44e9a14fd6c0e270599105c4aabb6\",\"node_upserts\":[{\"id\":\"a\",\"type\":\"entity\",\"label\":\"a\",\"text\":\"a\",\"properties\":{},\"provenance\":{}}]}",
+      "base": {
+        "schema_version": "1.0",
+        "nodes": [
+          {
+            "id": "a",
+            "type": "entity",
+            "label": "a",
+            "text": "old text",
+            "properties": {},
+            "provenance": {}
+          },
+          {
+            "id": "b",
+            "type": "entity",
+            "label": "b",
+            "text": "b",
+            "properties": {},
+            "provenance": {}
+          }
+        ],
+        "edges": [
+          {
+            "id": "e",
+            "from": "a",
+            "to": "b",
+            "type": "knows",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {},
+            "provenance": {}
+          }
+        ]
+      },
+      "expected_canonical": "{\"edges\":[{\"confidence\":1,\"from\":\"a\",\"id\":\"e\",\"properties\":{},\"provenance\":{},\"relation_kind\":\"explicit\",\"to\":\"b\",\"type\":\"knows\"}],\"nodes\":[{\"id\":\"a\",\"label\":\"a\",\"properties\":{},\"provenance\":{},\"text\":\"a\",\"type\":\"entity\"},{\"id\":\"b\",\"label\":\"b\",\"properties\":{},\"provenance\":{},\"text\":\"b\",\"type\":\"entity\"}],\"schema_version\":\"1.0\"}",
+      "expected_hash": "9acc0d486a425e120cd531c9ac9f460b5cc44e9a14fd6c0e270599105c4aabb6"
+    },
+    {
+      "name": "legacy-empty-mode-fields",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"full\",\"content_hash\":\"9acc0d486a425e120cd531c9ac9f460b5cc44e9a14fd6c0e270599105c4aabb6\",\"nodes\":[{\"id\":\"a\",\"type\":\"entity\",\"label\":\"a\",\"text\":\"a\",\"properties\":{},\"provenance\":{}},{\"id\":\"b\",\"type\":\"entity\",\"label\":\"b\",\"text\":\"b\",\"properties\":{},\"provenance\":{}}],\"edges\":[{\"id\":\"e\",\"from\":\"a\",\"to\":\"b\",\"type\":\"knows\",\"relation_kind\":\"explicit\",\"confidence\":1,\"properties\":{},\"provenance\":{}}],\"node_upserts\":[],\"edge_deletes\":[]}",
+      "expected_canonical": "{\"edges\":[{\"confidence\":1,\"from\":\"a\",\"id\":\"e\",\"properties\":{},\"provenance\":{},\"relation_kind\":\"explicit\",\"to\":\"b\",\"type\":\"knows\"}],\"nodes\":[{\"id\":\"a\",\"label\":\"a\",\"properties\":{},\"provenance\":{},\"text\":\"a\",\"type\":\"entity\"},{\"id\":\"b\",\"label\":\"b\",\"properties\":{},\"provenance\":{},\"text\":\"b\",\"type\":\"entity\"}],\"schema_version\":\"1.0\"}",
+      "expected_hash": "9acc0d486a425e120cd531c9ac9f460b5cc44e9a14fd6c0e270599105c4aabb6"
+    },
+    {
+      "name": "existing-v1-full",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"full\",\"content_hash\":\"0cf03cc36cd9fd8c0a62b917ad3ecd3ffda8c0e90d90e8e92ce7da78cf21021f\",\"nodes\":[{\"id\":\"33333333-3333-4333-8333-333333333333\",\"type\":\"asset\",\"label\":\"Water Pump\",\"text\":\"Primary water pump\",\"properties\":{\"site\":\"north\"},\"provenance\":{\"source\":\"eco-guardian\"}},{\"id\":\"44444444-4444-4444-8444-444444444444\",\"type\":\"location\",\"label\":\"North Station\",\"text\":\"North treatment station\",\"properties\":{\"region\":\"north\"},\"provenance\":{\"source\":\"eco-guardian\"}}],\"edges\":[{\"id\":\"55555555-5555-4555-8555-555555555555\",\"from\":\"33333333-3333-4333-8333-333333333333\",\"to\":\"44444444-4444-4444-8444-444444444444\",\"type\":\"located_at\",\"relation_kind\":\"explicit\",\"confidence\":1,\"properties\":{},\"provenance\":{\"source\":\"eco-guardian\"}}]}",
+      "expected_canonical": "{\"edges\":[{\"confidence\":1,\"from\":\"33333333-3333-4333-8333-333333333333\",\"id\":\"55555555-5555-4555-8555-555555555555\",\"properties\":{},\"provenance\":{\"source\":\"eco-guardian\"},\"relation_kind\":\"explicit\",\"to\":\"44444444-4444-4444-8444-444444444444\",\"type\":\"located_at\"}],\"nodes\":[{\"id\":\"33333333-3333-4333-8333-333333333333\",\"label\":\"Water Pump\",\"properties\":{\"site\":\"north\"},\"provenance\":{\"source\":\"eco-guardian\"},\"text\":\"Primary water pump\",\"type\":\"asset\"},{\"id\":\"44444444-4444-4444-8444-444444444444\",\"label\":\"North Station\",\"properties\":{\"region\":\"north\"},\"provenance\":{\"source\":\"eco-guardian\"},\"text\":\"North treatment station\",\"type\":\"location\"}],\"schema_version\":\"1.0\"}",
+      "expected_hash": "0cf03cc36cd9fd8c0a62b917ad3ecd3ffda8c0e90d90e8e92ce7da78cf21021f"
+    },
+    {
+      "name": "existing-v1-delta",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"delta\",\"base_version\":\"11111111-1111-4111-8111-111111111111\",\"content_hash\":\"0cf03cc36cd9fd8c0a62b917ad3ecd3ffda8c0e90d90e8e92ce7da78cf21021f\",\"node_upserts\":[{\"id\":\"44444444-4444-4444-8444-444444444444\",\"type\":\"location\",\"label\":\"North Station\",\"text\":\"North treatment station\",\"properties\":{\"region\":\"north\"},\"provenance\":{\"source\":\"eco-guardian\"}}],\"edge_upserts\":[{\"id\":\"55555555-5555-4555-8555-555555555555\",\"from\":\"33333333-3333-4333-8333-333333333333\",\"to\":\"44444444-4444-4444-8444-444444444444\",\"type\":\"located_at\",\"relation_kind\":\"explicit\",\"confidence\":1,\"properties\":{},\"provenance\":{\"source\":\"eco-guardian\"}}]}",
+      "expected_canonical": "{\"edges\":[{\"confidence\":1,\"from\":\"33333333-3333-4333-8333-333333333333\",\"id\":\"55555555-5555-4555-8555-555555555555\",\"properties\":{},\"provenance\":{\"source\":\"eco-guardian\"},\"relation_kind\":\"explicit\",\"to\":\"44444444-4444-4444-8444-444444444444\",\"type\":\"located_at\"}],\"nodes\":[{\"id\":\"33333333-3333-4333-8333-333333333333\",\"label\":\"Water Pump\",\"properties\":{\"site\":\"north\"},\"provenance\":{\"source\":\"eco-guardian\"},\"text\":\"Primary water pump\",\"type\":\"asset\"},{\"id\":\"44444444-4444-4444-8444-444444444444\",\"label\":\"North Station\",\"properties\":{\"region\":\"north\"},\"provenance\":{\"source\":\"eco-guardian\"},\"text\":\"North treatment station\",\"type\":\"location\"}],\"schema_version\":\"1.0\"}",
+      "expected_hash": "0cf03cc36cd9fd8c0a62b917ad3ecd3ffda8c0e90d90e8e92ce7da78cf21021f",
+      "base": {
+        "schema_version": "1.0",
+        "nodes": [
+          {
+            "id": "33333333-3333-4333-8333-333333333333",
+            "type": "asset",
+            "label": "Water Pump",
+            "text": "Primary water pump",
+            "properties": {
+              "site": "north"
+            },
+            "provenance": {
+              "source": "eco-guardian"
+            }
+          }
+        ],
+        "edges": []
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "name": "duplicate-root",
+      "request_json": "{\"schema_version\": \"1.0\", \"mode\": \"full\", \"mode\": \"full\", \"content_hash\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"nodes\": [], \"edges\": []}",
+      "reject": "decode"
+    },
+    {
+      "name": "duplicate-nested",
+      "request_json": "{\"schema_version\": \"1.0\", \"mode\": \"full\", \"content_hash\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"nodes\": [{\"id\": \"a\", \"type\": \"entity\", \"label\": \"a\", \"text\": \"a\", \"properties\": {\"x\":1,\"\\u0078\":2}, \"provenance\": {}}], \"edges\": []}",
+      "reject": "decode"
+    },
+    {
+      "name": "unknown-field",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"full\",\"content_hash\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"nodes\":[],\"edges\":[],\"unexpected\":true}",
+      "reject": "decode"
+    },
+    {
+      "name": "trailing-json",
+      "request_json": "{\"schema_version\": \"1.0\", \"mode\": \"full\", \"content_hash\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"nodes\": [], \"edges\": []} {}",
+      "reject": "decode"
+    },
+    {
+      "name": "hash-mismatch",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"full\",\"content_hash\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"nodes\":[{\"id\":\"a\",\"type\":\"entity\",\"label\":\"a\",\"text\":\"a\",\"properties\":{},\"provenance\":{}}],\"edges\":[]}",
+      "reject": "hash"
+    },
+    {
+      "name": "hash-uppercase",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"full\",\"content_hash\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\"nodes\":[],\"edges\":[]}",
+      "reject": "INVALID_SNAPSHOT_REQUEST"
+    },
+    {
+      "name": "schema-mismatch",
+      "request_json": "{\"schema_version\":\"2.0\",\"mode\":\"full\",\"content_hash\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"nodes\":[],\"edges\":[]}",
+      "reject": "INVALID_SNAPSHOT_REQUEST"
+    },
+    {
+      "name": "duplicate-node",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"full\",\"content_hash\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"nodes\":[{\"id\":\"a\",\"type\":\"entity\",\"label\":\"a\",\"text\":\"a\",\"properties\":{},\"provenance\":{}},{\"id\":\"a\",\"type\":\"entity\",\"label\":\"a\",\"text\":\"a\",\"properties\":{},\"provenance\":{}}],\"edges\":[]}",
+      "reject": "DUPLICATE_NODE_ID"
+    },
+    {
+      "name": "duplicate-edge",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"full\",\"content_hash\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"nodes\":[{\"id\":\"a\",\"type\":\"entity\",\"label\":\"a\",\"text\":\"a\",\"properties\":{},\"provenance\":{}},{\"id\":\"b\",\"type\":\"entity\",\"label\":\"b\",\"text\":\"b\",\"properties\":{},\"provenance\":{}}],\"edges\":[{\"id\":\"e\",\"from\":\"a\",\"to\":\"b\",\"type\":\"knows\",\"relation_kind\":\"explicit\",\"confidence\":1,\"properties\":{},\"provenance\":{}},{\"id\":\"e\",\"from\":\"a\",\"to\":\"b\",\"type\":\"knows\",\"relation_kind\":\"explicit\",\"confidence\":1,\"properties\":{},\"provenance\":{}}]}",
+      "reject": "DUPLICATE_EDGE_ID"
+    },
+    {
+      "name": "dangling-edge",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"full\",\"content_hash\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"nodes\":[{\"id\":\"a\",\"type\":\"entity\",\"label\":\"a\",\"text\":\"a\",\"properties\":{},\"provenance\":{}}],\"edges\":[{\"id\":\"e\",\"from\":\"a\",\"to\":\"b\",\"type\":\"knows\",\"relation_kind\":\"explicit\",\"confidence\":1,\"properties\":{},\"provenance\":{}}]}",
+      "reject": "DANGLING_EDGE"
+    },
+    {
+      "name": "properties-null",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"full\",\"content_hash\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"nodes\":[{\"id\":\"a\",\"type\":\"entity\",\"label\":\"a\",\"text\":\"a\",\"properties\":null,\"provenance\":{}}],\"edges\":[]}",
+      "reject": "INVALID_SNAPSHOT_REQUEST"
+    },
+    {
+      "name": "properties-array",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"full\",\"content_hash\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"nodes\":[{\"id\":\"a\",\"type\":\"entity\",\"label\":\"a\",\"text\":\"a\",\"properties\":[],\"provenance\":{}}],\"edges\":[]}",
+      "reject": "INVALID_SNAPSHOT_REQUEST"
+    },
+    {
+      "name": "provenance-null",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"full\",\"content_hash\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"nodes\":[{\"id\":\"a\",\"type\":\"entity\",\"label\":\"a\",\"text\":\"a\",\"properties\":{},\"provenance\":null}],\"edges\":[]}",
+      "reject": "INVALID_SNAPSHOT_REQUEST"
+    },
+    {
+      "name": "explicit-confidence",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"full\",\"content_hash\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"nodes\":[{\"id\":\"a\",\"type\":\"entity\",\"label\":\"a\",\"text\":\"a\",\"properties\":{},\"provenance\":{}},{\"id\":\"b\",\"type\":\"entity\",\"label\":\"b\",\"text\":\"b\",\"properties\":{},\"provenance\":{}}],\"edges\":[{\"id\":\"e\",\"from\":\"a\",\"to\":\"b\",\"type\":\"knows\",\"relation_kind\":\"explicit\",\"confidence\":0.9,\"properties\":{},\"provenance\":{}}]}",
+      "reject": "INVALID_RELATION_PROVENANCE"
+    },
+    {
+      "name": "inferred-no-evidence",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"full\",\"content_hash\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"nodes\":[{\"id\":\"a\",\"type\":\"entity\",\"label\":\"a\",\"text\":\"a\",\"properties\":{},\"provenance\":{}},{\"id\":\"b\",\"type\":\"entity\",\"label\":\"b\",\"text\":\"b\",\"properties\":{},\"provenance\":{}}],\"edges\":[{\"id\":\"e\",\"from\":\"a\",\"to\":\"b\",\"type\":\"knows\",\"relation_kind\":\"inferred\",\"confidence\":0.75,\"properties\":{},\"provenance\":{\"producer\":\"test\",\"version\":\"v1\",\"generated_at\":\"2026-09-11T00:00:00Z\"}}]}",
+      "reject": "INVALID_RELATION_PROVENANCE"
+    },
+    {
+      "name": "inferred-blank-evidence",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"full\",\"content_hash\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"nodes\":[{\"id\":\"a\",\"type\":\"entity\",\"label\":\"a\",\"text\":\"a\",\"properties\":{},\"provenance\":{}},{\"id\":\"b\",\"type\":\"entity\",\"label\":\"b\",\"text\":\"b\",\"properties\":{},\"provenance\":{}}],\"edges\":[{\"id\":\"e\",\"from\":\"a\",\"to\":\"b\",\"type\":\"knows\",\"relation_kind\":\"inferred\",\"confidence\":0.75,\"properties\":{},\"provenance\":{\"model\":\"extractor\",\"model_version\":\"v1\",\"generated_at\":\"2026-09-11T00:00:00Z\",\"evidence_refs\":[\" \"]}}]}",
+      "reject": "INVALID_RELATION_PROVENANCE"
+    },
+    {
+      "name": "inferred-invalid-time",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"full\",\"content_hash\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"nodes\":[{\"id\":\"a\",\"type\":\"entity\",\"label\":\"a\",\"text\":\"a\",\"properties\":{},\"provenance\":{}},{\"id\":\"b\",\"type\":\"entity\",\"label\":\"b\",\"text\":\"b\",\"properties\":{},\"provenance\":{}}],\"edges\":[{\"id\":\"e\",\"from\":\"a\",\"to\":\"b\",\"type\":\"knows\",\"relation_kind\":\"inferred\",\"confidence\":0.75,\"properties\":{},\"provenance\":{\"model\":\"extractor\",\"model_version\":\"v1\",\"generated_at\":\"yesterday\",\"evidence_refs\":[\"chapter:1\"]}}]}",
+      "reject": "INVALID_RELATION_PROVENANCE"
+    },
+    {
+      "name": "inferred-no-producer",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"full\",\"content_hash\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"nodes\":[{\"id\":\"a\",\"type\":\"entity\",\"label\":\"a\",\"text\":\"a\",\"properties\":{},\"provenance\":{}},{\"id\":\"b\",\"type\":\"entity\",\"label\":\"b\",\"text\":\"b\",\"properties\":{},\"provenance\":{}}],\"edges\":[{\"id\":\"e\",\"from\":\"a\",\"to\":\"b\",\"type\":\"knows\",\"relation_kind\":\"inferred\",\"confidence\":0.75,\"properties\":{},\"provenance\":{\"version\":\"v1\",\"generated_at\":\"2026-09-11T00:00:00Z\",\"evidence\":[\"chapter:1\"]}}]}",
+      "reject": "INVALID_RELATION_PROVENANCE"
+    },
+    {
+      "name": "inferred-confidence",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"full\",\"content_hash\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"nodes\":[{\"id\":\"a\",\"type\":\"entity\",\"label\":\"a\",\"text\":\"a\",\"properties\":{},\"provenance\":{}},{\"id\":\"b\",\"type\":\"entity\",\"label\":\"b\",\"text\":\"b\",\"properties\":{},\"provenance\":{}}],\"edges\":[{\"id\":\"e\",\"from\":\"a\",\"to\":\"b\",\"type\":\"knows\",\"relation_kind\":\"inferred\",\"confidence\":1.01,\"properties\":{},\"provenance\":{\"model\":\"extractor\",\"model_version\":\"v1\",\"generated_at\":\"2026-09-11T00:00:00Z\",\"evidence_refs\":[\"chapter:1\"]}}]}",
+      "reject": "INVALID_RELATION_PROVENANCE"
+    },
+    {
+      "name": "delta-missing-base-version",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"delta\",\"base_version\":\"\",\"content_hash\":\"0000000000000000000000000000000000000000000000000000000000000000\"}",
+      "base": {
+        "schema_version": "1.0",
+        "nodes": [
+          {
+            "id": "a",
+            "type": "entity",
+            "label": "a",
+            "text": "a",
+            "properties": {},
+            "provenance": {}
+          },
+          {
+            "id": "b",
+            "type": "entity",
+            "label": "b",
+            "text": "b",
+            "properties": {},
+            "provenance": {}
+          }
+        ],
+        "edges": [
+          {
+            "id": "e",
+            "from": "a",
+            "to": "b",
+            "type": "knows",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {},
+            "provenance": {}
+          }
+        ]
+      },
+      "reject": "INVALID_SNAPSHOT_REQUEST"
+    },
+    {
+      "name": "delta-with-full-nodes",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"delta\",\"base_version\":\"v1\",\"content_hash\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"nodes\":[{\"id\":\"a\",\"type\":\"entity\",\"label\":\"a\",\"text\":\"a\",\"properties\":{},\"provenance\":{}}]}",
+      "base": {
+        "schema_version": "1.0",
+        "nodes": [
+          {
+            "id": "a",
+            "type": "entity",
+            "label": "a",
+            "text": "a",
+            "properties": {},
+            "provenance": {}
+          },
+          {
+            "id": "b",
+            "type": "entity",
+            "label": "b",
+            "text": "b",
+            "properties": {},
+            "provenance": {}
+          }
+        ],
+        "edges": [
+          {
+            "id": "e",
+            "from": "a",
+            "to": "b",
+            "type": "knows",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {},
+            "provenance": {}
+          }
+        ]
+      },
+      "reject": "INVALID_SNAPSHOT_REQUEST"
+    },
+    {
+      "name": "delta-missing-delete",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"delta\",\"base_version\":\"v1\",\"content_hash\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"node_deletes\":[\"missing\"]}",
+      "base": {
+        "schema_version": "1.0",
+        "nodes": [
+          {
+            "id": "a",
+            "type": "entity",
+            "label": "a",
+            "text": "a",
+            "properties": {},
+            "provenance": {}
+          },
+          {
+            "id": "b",
+            "type": "entity",
+            "label": "b",
+            "text": "b",
+            "properties": {},
+            "provenance": {}
+          }
+        ],
+        "edges": [
+          {
+            "id": "e",
+            "from": "a",
+            "to": "b",
+            "type": "knows",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {},
+            "provenance": {}
+          }
+        ]
+      },
+      "reject": "INVALID_DELTA_OPERATION"
+    },
+    {
+      "name": "delta-duplicate-delete",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"delta\",\"base_version\":\"v1\",\"content_hash\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"edge_deletes\":[\"e\",\"e\"]}",
+      "base": {
+        "schema_version": "1.0",
+        "nodes": [
+          {
+            "id": "a",
+            "type": "entity",
+            "label": "a",
+            "text": "a",
+            "properties": {},
+            "provenance": {}
+          },
+          {
+            "id": "b",
+            "type": "entity",
+            "label": "b",
+            "text": "b",
+            "properties": {},
+            "provenance": {}
+          }
+        ],
+        "edges": [
+          {
+            "id": "e",
+            "from": "a",
+            "to": "b",
+            "type": "knows",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {},
+            "provenance": {}
+          }
+        ]
+      },
+      "reject": "INVALID_DELTA_OPERATION"
+    },
+    {
+      "name": "delta-upsert-delete-conflict",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"delta\",\"base_version\":\"v1\",\"content_hash\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"node_upserts\":[{\"id\":\"a\",\"type\":\"entity\",\"label\":\"a\",\"text\":\"a\",\"properties\":{},\"provenance\":{}}],\"node_deletes\":[\"a\"]}",
+      "base": {
+        "schema_version": "1.0",
+        "nodes": [
+          {
+            "id": "a",
+            "type": "entity",
+            "label": "a",
+            "text": "a",
+            "properties": {},
+            "provenance": {}
+          },
+          {
+            "id": "b",
+            "type": "entity",
+            "label": "b",
+            "text": "b",
+            "properties": {},
+            "provenance": {}
+          }
+        ],
+        "edges": [
+          {
+            "id": "e",
+            "from": "a",
+            "to": "b",
+            "type": "knows",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {},
+            "provenance": {}
+          }
+        ]
+      },
+      "reject": "INVALID_DELTA_OPERATION"
+    },
+    {
+      "name": "delta-duplicate-upsert",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"delta\",\"base_version\":\"v1\",\"content_hash\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"node_upserts\":[{\"id\":\"a\",\"type\":\"entity\",\"label\":\"a\",\"text\":\"a\",\"properties\":{},\"provenance\":{}},{\"id\":\"a\",\"type\":\"entity\",\"label\":\"a\",\"text\":\"a\",\"properties\":{},\"provenance\":{}}]}",
+      "base": {
+        "schema_version": "1.0",
+        "nodes": [
+          {
+            "id": "a",
+            "type": "entity",
+            "label": "a",
+            "text": "a",
+            "properties": {},
+            "provenance": {}
+          },
+          {
+            "id": "b",
+            "type": "entity",
+            "label": "b",
+            "text": "b",
+            "properties": {},
+            "provenance": {}
+          }
+        ],
+        "edges": [
+          {
+            "id": "e",
+            "from": "a",
+            "to": "b",
+            "type": "knows",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {},
+            "provenance": {}
+          }
+        ]
+      },
+      "reject": "DUPLICATE_NODE_ID"
+    },
+    {
+      "name": "delta-dangling-edge",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"delta\",\"base_version\":\"v1\",\"content_hash\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"node_deletes\":[\"b\"]}",
+      "base": {
+        "schema_version": "1.0",
+        "nodes": [
+          {
+            "id": "a",
+            "type": "entity",
+            "label": "a",
+            "text": "a",
+            "properties": {},
+            "provenance": {}
+          },
+          {
+            "id": "b",
+            "type": "entity",
+            "label": "b",
+            "text": "b",
+            "properties": {},
+            "provenance": {}
+          }
+        ],
+        "edges": [
+          {
+            "id": "e",
+            "from": "a",
+            "to": "b",
+            "type": "knows",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {},
+            "provenance": {}
+          }
+        ]
+      },
+      "reject": "DANGLING_EDGE"
+    },
+    {
+      "name": "number-overflow",
+      "request_json": "{\"schema_version\": \"1.0\", \"mode\": \"full\", \"content_hash\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"nodes\": [{\"id\": \"a\", \"type\": \"entity\", \"label\": \"a\", \"text\": \"a\", \"properties\": {\"number\":1e400}, \"provenance\": {}}], \"edges\": []}",
+      "reject": "canonical"
+    },
+    {
+      "name": "unpaired-surrogate-property",
+      "request_json": "{\"schema_version\": \"1.0\", \"mode\": \"full\", \"content_hash\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"nodes\": [{\"id\": \"a\", \"type\": \"entity\", \"label\": \"a\", \"text\": \"a\", \"properties\": {\"text\":\"\\ud800\"}, \"provenance\": {}}], \"edges\": []}",
+      "reject": "canonical"
+    },
+    {
+      "name": "inferred-missing-confidence",
+      "request_json": "{\"schema_version\":\"1.0\",\"mode\":\"full\",\"content_hash\":\"c519f1920573e41730b26838adfdd1fecd691b8acc7c3829b910c9f0d942c5c7\",\"nodes\":[{\"id\":\"a\",\"type\":\"entity\",\"label\":\"a\",\"text\":\"a\",\"properties\":{},\"provenance\":{}},{\"id\":\"b\",\"type\":\"entity\",\"label\":\"b\",\"text\":\"b\",\"properties\":{},\"provenance\":{}}],\"edges\":[{\"id\":\"e\",\"from\":\"a\",\"to\":\"b\",\"type\":\"knows\",\"relation_kind\":\"inferred\",\"properties\":{},\"provenance\":{\"model\":\"extractor\",\"model_version\":\"v1\",\"generated_at\":\"2026-09-11T00:00:00Z\",\"evidence_refs\":[\"chapter:1\"]}}]}",
+      "reject": "INVALID_RELATION_PROVENANCE"
+    }
+  ]
+}

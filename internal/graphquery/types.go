@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Wrath-y/local-rag/internal/metadatafilter"
 	"io"
 	"sort"
 	"strings"
@@ -62,29 +63,32 @@ type Repository interface {
 }
 
 type TraverseRequest struct {
-	SnapshotVersion   string    `json:"snapshot_version,omitempty"`
-	StartNodeIDs      []string  `json:"start_node_ids"`
-	Direction         Direction `json:"direction,omitempty"`
-	NodeTypes         []string  `json:"node_types,omitempty"`
-	EdgeTypes         []string  `json:"edge_types,omitempty"`
-	RelationshipKinds []string  `json:"relationship_kinds,omitempty"`
-	MaxDepth          *int      `json:"max_depth,omitempty"`
-	MaxNodes          *int      `json:"max_nodes,omitempty"`
+	Filters           metadatafilter.Filter `json:"filters,omitempty"`
+	SnapshotVersion   string                `json:"snapshot_version,omitempty"`
+	StartNodeIDs      []string              `json:"start_node_ids"`
+	Direction         Direction             `json:"direction,omitempty"`
+	NodeTypes         []string              `json:"node_types,omitempty"`
+	EdgeTypes         []string              `json:"edge_types,omitempty"`
+	RelationshipKinds []string              `json:"relationship_kinds,omitempty"`
+	MaxDepth          *int                  `json:"max_depth,omitempty"`
+	MaxNodes          *int                  `json:"max_nodes,omitempty"`
 }
 
 type PathsRequest struct {
-	SnapshotVersion   string    `json:"snapshot_version,omitempty"`
-	SourceNodeIDs     []string  `json:"source_node_ids"`
-	TargetNodeIDs     []string  `json:"target_node_ids"`
-	Direction         Direction `json:"direction,omitempty"`
-	NodeTypes         []string  `json:"node_types,omitempty"`
-	EdgeTypes         []string  `json:"edge_types,omitempty"`
-	RelationshipKinds []string  `json:"relationship_kinds,omitempty"`
-	MaxDepth          *int      `json:"max_depth,omitempty"`
-	MaxPaths          *int      `json:"max_paths,omitempty"`
+	Filters           metadatafilter.Filter `json:"filters,omitempty"`
+	SnapshotVersion   string                `json:"snapshot_version,omitempty"`
+	SourceNodeIDs     []string              `json:"source_node_ids"`
+	TargetNodeIDs     []string              `json:"target_node_ids"`
+	Direction         Direction             `json:"direction,omitempty"`
+	NodeTypes         []string              `json:"node_types,omitempty"`
+	EdgeTypes         []string              `json:"edge_types,omitempty"`
+	RelationshipKinds []string              `json:"relationship_kinds,omitempty"`
+	MaxDepth          *int                  `json:"max_depth,omitempty"`
+	MaxPaths          *int                  `json:"max_paths,omitempty"`
 }
 
 type Filter struct {
+	Filters           metadatafilter.Filter `json:"filters,omitempty"`
 	SnapshotVersion   string
 	Direction         Direction
 	NodeTypes         []string
@@ -161,6 +165,10 @@ func NormalizeTraverse(request TraverseRequest) (NormalizedTraverse, *graphsnaps
 	if graphErr != nil {
 		return NormalizedTraverse{}, graphErr
 	}
+	if err := request.Filters.Validate(); err != nil {
+		return NormalizedTraverse{}, invalid("filters")
+	}
+	filter.Filters = request.Filters
 	ids, graphErr := normalizedRequiredSet("start_node_ids", request.StartNodeIDs)
 	if graphErr != nil {
 		return NormalizedTraverse{}, graphErr
@@ -177,6 +185,10 @@ func NormalizePaths(request PathsRequest) (NormalizedPaths, *graphsnapshot.Error
 	if graphErr != nil {
 		return NormalizedPaths{}, graphErr
 	}
+	if err := request.Filters.Validate(); err != nil {
+		return NormalizedPaths{}, invalid("filters")
+	}
+	filter.Filters = request.Filters
 	sources, graphErr := normalizedRequiredSet("source_node_ids", request.SourceNodeIDs)
 	if graphErr != nil {
 		return NormalizedPaths{}, graphErr

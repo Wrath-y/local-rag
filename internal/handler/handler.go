@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"context"
+	"sync"
 	"time"
 
 	"github.com/Wrath-y/local-rag/internal/chunk"
@@ -48,23 +50,25 @@ type Deps struct {
 
 // Handler is the HTTP handler collection.
 type Handler struct {
-	deps             Deps
-	indexRebuild     *indexRebuildCoordinator
-	hookObservations *observe.HookObservations
-	citations        *citation.Manager
-	management       *management.Service
-	agent            agentState
-	ingestService    document.Service
-	syncService      *sourcesync.Service
-	graphService     GraphSnapshotService
-	graphReader      graphsnapshot.ExistingSnapshotReader
-	graphTaskReader  GraphTaskReader
-	graphLifecycle   GraphSnapshotLifecycle
-	graphQuery       *graphquery.Service
-	graphRetrieval   GraphRetrievalService
-	graphRebuild     GraphRebuildService
-	vectorHealth     *operability.ProviderStateCache
-	rerankHealth     *operability.ProviderStateCache
+	namespaceCleanupCancel context.CancelFunc
+	namespaceCleanupWG     sync.WaitGroup
+	deps                   Deps
+	indexRebuild           *indexRebuildCoordinator
+	hookObservations       *observe.HookObservations
+	citations              *citation.Manager
+	management             *management.Service
+	agent                  agentState
+	ingestService          document.Service
+	syncService            *sourcesync.Service
+	graphService           GraphSnapshotService
+	graphReader            graphsnapshot.ExistingSnapshotReader
+	graphTaskReader        GraphTaskReader
+	graphLifecycle         GraphSnapshotLifecycle
+	graphQuery             *graphquery.Service
+	graphRetrieval         GraphRetrievalService
+	graphRebuild           GraphRebuildService
+	vectorHealth           *operability.ProviderStateCache
+	rerankHealth           *operability.ProviderStateCache
 
 	// runtime toggleable state
 	rerankEnabled        bool
@@ -150,12 +154,17 @@ func New(deps Deps) *Handler {
 	h.indexRebuild = newIndexRebuildCoordinator(deps.Stores, deps.Embedder, dims, deps.Management)
 	h.hookObservations = observe.NewHookObservations()
 	h.citations = citation.NewManager(time.Hour)
+	h.startNamespaceCleanup()
 	return h
 }
 
 // Close stops handler-owned background workers before the store lifecycle is
 // closed. HTTP shutdown calls this only after admissions have stopped.
 func (h *Handler) Close() {
+	if h != nil && h.namespaceCleanupCancel != nil {
+		h.namespaceCleanupCancel()
+		h.namespaceCleanupWG.Wait()
+	}
 	if h != nil && h.syncService != nil {
 		h.syncService.Close()
 	}

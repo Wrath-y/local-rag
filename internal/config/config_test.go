@@ -452,3 +452,18 @@ func TestLoad_InvalidYAML(t *testing.T) {
 		t.Error("expected error for invalid YAML, got nil")
 	}
 }
+
+// 兼容旧配置的显式关闭，避免远程嵌入仍隐式启动本地重排模型。
+func TestExplicitRerankDisabled(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("rerank:\n  enabled: false\n  provider: local\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Rerank.Provider != "disabled" {
+		t.Fatalf("provider=%s", cfg.Rerank.Provider)
+	}
+}

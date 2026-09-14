@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/Wrath-y/local-rag/internal/metadatafilter"
 
 	"github.com/Wrath-y/local-rag/internal/graphquery"
 	"github.com/Wrath-y/local-rag/internal/graphretrieval"
@@ -21,6 +22,11 @@ func (s *Store) WithRetrievalRead(ctx context.Context, namespace, requestedVersi
 	if namespace == "" {
 		return ErrInvalidGraphIdentity
 	}
+	release, err := s.acquireNamespaceRead(ctx, namespace)
+	if err != nil {
+		return err
+	}
+	defer release()
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return fmt.Errorf("%w: begin graph retrieval read: %v", graphquery.ErrStoreUnavailable, err)
@@ -119,6 +125,13 @@ ORDER BY created_at DESC,generation ASC LIMIT 1`, namespace, version, component)
 type graphRetrievalReadView struct {
 	*graphReadView
 	generations map[graphretrieval.Stage]retrievalGeneration
+	filters     metadatafilter.Filter
+}
+
+func (v *graphRetrievalReadView) WithMetadata(f metadatafilter.Filter) graphretrieval.ReadView {
+	out := *v
+	out.filters = f
+	return &out
 }
 
 func (v *graphRetrievalReadView) Generation(stage graphretrieval.Stage) (*graphretrieval.GenerationIdentity, graphretrieval.StageOutcome) {
@@ -141,6 +154,12 @@ JOIN graph_nodes AS node ON node.namespace=document.namespace AND node.version=d
 WHERE graph_search_fts MATCH ? AND document.namespace=? AND document.version=? AND document.generation=? AND document.entity_kind='node'`
 	args := []any{query, v.namespace, v.version, identity.Generation}
 	statement, args = graphRetrievalNodeTypeFilter(statement, args, nodeTypes, "node.node_type")
+	clause, values, filterErr := v.filters.SQL("node.properties_json")
+	if filterErr != nil {
+		return nil, graphretrieval.StagePermanentFailure, filterErr
+	}
+	statement += clause
+	args = append(args, values...)
 	statement += ` ORDER BY bm25(graph_search_fts) ASC,document.entity_id ASC LIMIT ?`
 	args = append(args, limit)
 	rows, err := v.tx.QueryContext(ctx, statement, args...)
@@ -178,8 +197,23 @@ JOIN graph_search_documents AS document ON document.namespace=item.namespace AND
 JOIN graph_nodes AS node ON node.namespace=item.namespace AND node.version=item.version AND node.node_id=item.entity_id
 WHERE graph_vectors.embedding MATCH ? AND graph_vectors.k=? AND item.namespace=? AND item.version=? AND item.generation=? AND item.entity_kind='node' AND document.generation=(SELECT generation FROM graph_retrieval_generations WHERE namespace=item.namespace AND version=item.version AND component='fts' AND selected=1 AND state='selected')`
 	args := []any{Float32ToBytes(vector), limit, v.namespace, v.version, identity.Generation}
+	if !v.filters.Empty() || len(nodeTypes) > 0 {
+		statement = `SELECT item.entity_id,document.search_text,vec_distance_L2(graph_vectors.embedding,?) AS distance
+FROM graph_vector_items AS item
+JOIN graph_vectors ON graph_vectors.item_id=item.id
+JOIN graph_search_documents AS document ON document.namespace=item.namespace AND document.version=item.version AND document.entity_kind=item.entity_kind AND document.entity_id=item.entity_id
+JOIN graph_nodes AS node ON node.namespace=item.namespace AND node.version=item.version AND node.node_id=item.entity_id
+WHERE item.namespace=? AND item.version=? AND item.generation=? AND item.entity_kind='node' AND document.generation=(SELECT generation FROM graph_retrieval_generations WHERE namespace=item.namespace AND version=item.version AND component='fts' AND selected=1 AND state='selected')`
+		args = []any{Float32ToBytes(vector), v.namespace, v.version, identity.Generation}
+	}
 	statement, args = graphRetrievalNodeTypeFilter(statement, args, nodeTypes, "node.node_type")
-	statement += ` ORDER BY graph_vectors.distance ASC,item.entity_id ASC LIMIT ?`
+	clause, values, filterErr := v.filters.SQL("node.properties_json")
+	if filterErr != nil {
+		return nil, graphretrieval.StagePermanentFailure, filterErr
+	}
+	statement += clause
+	args = append(args, values...)
+	statement += ` ORDER BY distance ASC,item.entity_id ASC LIMIT ?`
 	args = append(args, limit)
 	rows, err := v.tx.QueryContext(ctx, statement, args...)
 	if err != nil {

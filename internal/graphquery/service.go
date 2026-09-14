@@ -20,11 +20,16 @@ func (s Service) Traverse(ctx context.Context, namespace string, request Travers
 	}
 	var result TraverseResult
 	err := s.Repository.WithRead(ctx, namespace, normalized.SnapshotVersion, func(view ReadView) error {
+		guard := &MetadataView{ReadView: view, Filter: normalized.Filters}
+		view = guard
 		if graphErr := validateNodes(ctx, view, normalized.StartNodeIDs); graphErr != nil {
 			return graphErr
 		}
 		result = traverse(ctx, view, normalized)
-		return nil
+		if guard.Err != nil {
+			return guard.Err
+		}
+		return ctx.Err()
 	})
 	if err != nil {
 		return TraverseResult{}, mapError(err)
@@ -42,12 +47,17 @@ func (s Service) Paths(ctx context.Context, namespace string, request PathsReque
 	}
 	var result PathsResult
 	err := s.Repository.WithRead(ctx, namespace, normalized.SnapshotVersion, func(view ReadView) error {
+		guard := &MetadataView{ReadView: view, Filter: normalized.Filters}
+		view = guard
 		ids := append(append([]string{}, normalized.SourceNodeIDs...), normalized.TargetNodeIDs...)
 		if graphErr := validateNodes(ctx, view, ids); graphErr != nil {
 			return graphErr
 		}
 		result = paths(ctx, view, normalized)
-		return nil
+		if guard.Err != nil {
+			return guard.Err
+		}
+		return ctx.Err()
 	})
 	if err != nil {
 		return PathsResult{}, mapError(err)

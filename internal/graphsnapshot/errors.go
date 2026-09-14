@@ -6,6 +6,11 @@ import "fmt"
 type Code string
 
 const (
+	CodeInvalidNamespaceRequest       Code = "INVALID_NAMESPACE_REQUEST"
+	CodeNamespaceGenerationConflict   Code = "NAMESPACE_GENERATION_CONFLICT"
+	CodeReferenceRevisionConflict     Code = "REFERENCE_REVISION_CONFLICT"
+	CodeNamespaceDeleting             Code = "NAMESPACE_DELETING"
+	CodeSnapshotReferenced            Code = "SNAPSHOT_REFERENCED"
 	CodeInvalidSnapshotRequest        Code = "INVALID_SNAPSHOT_REQUEST"
 	CodeDuplicateNodeID               Code = "DUPLICATE_NODE_ID"
 	CodeDuplicateEdgeID               Code = "DUPLICATE_EDGE_ID"
@@ -19,6 +24,7 @@ const (
 	CodeSnapshotNotFound              Code = "SNAPSHOT_NOT_FOUND"
 	CodeTaskNotFound                  Code = "TASK_NOT_FOUND"
 	CodeSnapshotNotReady              Code = "SNAPSHOT_NOT_READY"
+	CodeActiveVersionConflict         Code = "ACTIVE_VERSION_CONFLICT"
 	CodeActiveSnapshotDeleteForbidden Code = "ACTIVE_SNAPSHOT_DELETE_FORBIDDEN"
 	CodeSnapshotWriteInProgress       Code = "SNAPSHOT_WRITE_IN_PROGRESS"
 	CodeInvalidGraphQuery             Code = "INVALID_GRAPH_QUERY"
@@ -41,6 +47,11 @@ type errorDefinition struct {
 }
 
 var errorCatalog = map[Code]errorDefinition{
+	CodeInvalidNamespaceRequest:       {"namespace 生命周期请求无效", false},
+	CodeNamespaceGenerationConflict:   {"namespace 范围已变化，请重新预览", false},
+	CodeReferenceRevisionConflict:     {"引用版本已变化，请重新同步", false},
+	CodeNamespaceDeleting:             {"namespace 正在清理或已删除", false},
+	CodeSnapshotReferenced:            {"快照仍有保留引用", false},
 	CodeInvalidSnapshotRequest:        {"Snapshot request is invalid", false},
 	CodeDuplicateNodeID:               {"Snapshot contains duplicate node IDs", false},
 	CodeDuplicateEdgeID:               {"Snapshot contains duplicate edge IDs", false},
@@ -54,6 +65,7 @@ var errorCatalog = map[Code]errorDefinition{
 	CodeSnapshotNotFound:              {"Snapshot was not found", false},
 	CodeTaskNotFound:                  {"Graph task was not found", false},
 	CodeSnapshotNotReady:              {"Snapshot is not ready", false},
+	CodeActiveVersionConflict:         {"Active snapshot does not match the expected version", false},
 	CodeActiveSnapshotDeleteForbidden: {"Active snapshot cannot be deleted", false},
 	CodeSnapshotWriteInProgress:       {"Snapshot has an active writer", false},
 	CodeInvalidGraphQuery:             {"Graph query is invalid", false},

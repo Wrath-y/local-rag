@@ -29,8 +29,18 @@ func (s Service) Retrieve(ctx context.Context, namespace string, request Request
 	// provider remains a typed base-stage outcome rather than a hard failure.
 	queryVector, embeddingOutcome := s.Embedder.EmbedQuery(ctx, normalized.Query)
 	var result RetrievalResult
+result.TruncationReasons=[]string{}
+normalized.TruncationReasons=&result.TruncationReasons
 	var bm25Outcome, vectorOutcome StageOutcome
 	err := s.Repository.WithRetrievalRead(ctx, namespace, normalized.SnapshotVersion, func(view ReadView) error {
+		if !normalized.Filters.Empty() {
+			filtered, ok := view.(MetadataCandidates)
+			if !ok {
+				return graphsnapshot.NewError(graphsnapshot.CodeInvalidRetrievalRequest, map[string]any{"field": "filters", "reason": "metadata_filter_v1 unavailable"}, nil)
+			}
+			view = filtered.WithMetadata(normalized.Filters)
+			view = metadataReadView{ReadView: view, graph: &graphquery.MetadataView{ReadView: view, Filter: normalized.Filters}}
+		}
 		ftsIdentity, ftsGenerationState := view.Generation(StageBM25)
 		vectorIdentity, vectorGenerationState := view.Generation(StageVector)
 		if ftsGenerationState == StageIndexEvicted && vectorGenerationState == StageIndexEvicted {
@@ -70,6 +80,7 @@ func (s Service) Retrieve(ctx context.Context, namespace string, request Request
 	if err != nil {
 		return RetrievalResult{}, mapError(err)
 	}
+result.Truncated=len(result.TruncationReasons)>0
 	if graphErr := s.applyRerank(ctx, normalized.Query, &result); graphErr != nil {
 		return RetrievalResult{}, graphErr
 	}

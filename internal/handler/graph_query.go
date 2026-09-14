@@ -28,6 +28,9 @@ func (r lifecycleGraphReadRepository) WithRead(ctx context.Context, namespace, v
 
 // TraverseGraph performs a strict, provider-free immutable graph traversal.
 func (h *Handler) TraverseGraph(c *gin.Context) {
+	if !h.namespaceAccessAllowed(c) {
+		return
+	}
 	if h.graphQuery == nil {
 		writeGraphError(c, graphsnapshot.NewError(graphsnapshot.CodeGraphStoreUnavailable, nil, nil))
 		return
@@ -57,6 +60,9 @@ func (h *Handler) TraverseGraph(c *gin.Context) {
 
 // PathsGraph performs a strict, provider-free bounded evidence path query.
 func (h *Handler) PathsGraph(c *gin.Context) {
+	if !h.namespaceAccessAllowed(c) {
+		return
+	}
 	if h.graphQuery == nil {
 		writeGraphError(c, graphsnapshot.NewError(graphsnapshot.CodeGraphStoreUnavailable, nil, nil))
 		return

@@ -5,6 +5,7 @@ package graphretrieval
 
 import (
 	"context"
+	"github.com/Wrath-y/local-rag/internal/metadatafilter"
 	"sort"
 
 	"github.com/Wrath-y/local-rag/internal/graphquery"
@@ -22,17 +23,19 @@ const (
 )
 
 type Request struct {
-	Query             string   `json:"query"`
-	SnapshotVersion   string   `json:"snapshot_version,omitempty"`
-	NodeTypes         []string `json:"node_types,omitempty"`
-	EdgeTypes         []string `json:"edge_types,omitempty"`
-	RelationshipKinds []string `json:"relationship_kinds,omitempty"`
-	SeedLimit         *int     `json:"seed_limit,omitempty"`
-	ResultLimit       *int     `json:"result_limit,omitempty"`
-	GraphDepth        *int     `json:"graph_depth,omitempty"`
+	Query             string                `json:"query"`
+	Filters           metadatafilter.Filter `json:"filters,omitempty"`
+	SnapshotVersion   string                `json:"snapshot_version,omitempty"`
+	NodeTypes         []string              `json:"node_types,omitempty"`
+	EdgeTypes         []string              `json:"edge_types,omitempty"`
+	RelationshipKinds []string              `json:"relationship_kinds,omitempty"`
+	SeedLimit         *int                  `json:"seed_limit,omitempty"`
+	ResultLimit       *int                  `json:"result_limit,omitempty"`
+	GraphDepth        *int                  `json:"graph_depth,omitempty"`
 }
 
 type Filter struct {
+	Filters           metadatafilter.Filter `json:"filters,omitempty"`
 	SnapshotVersion   string
 	NodeTypes         []string
 	EdgeTypes         []string
@@ -45,6 +48,7 @@ type NormalizedRequest struct {
 	SeedLimit   int
 	ResultLimit int
 	GraphDepth  int
+	TruncationReasons *[]string
 }
 
 type Stage string
@@ -158,6 +162,8 @@ type Result struct {
 }
 
 type RetrievalResult struct {
+	Truncated bool `json:"truncated"`
+	TruncationReasons []string `json:"truncation_reasons"`
 	ResolvedSnapshotVersion string              `json:"resolved_snapshot_version"`
 	ContentHash             string              `json:"content_hash"`
 	ModeUsed                string              `json:"mode_used"`

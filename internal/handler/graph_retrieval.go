@@ -51,6 +51,9 @@ func (r handlerReranker) Rerank(ctx context.Context, query string, documents []s
 // RetrieveGraph runs strict immutable snapshot retrieval without changing the
 // unversioned legacy /retrieve route.
 func (h *Handler) RetrieveGraph(c *gin.Context) {
+	if !h.namespaceAccessAllowed(c) {
+		return
+	}
 	if h.graphRetrieval == nil {
 		writeGraphError(c, graphsnapshot.NewError(graphsnapshot.CodeGraphStoreUnavailable, nil, nil))
 		return

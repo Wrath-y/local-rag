@@ -44,6 +44,7 @@ type EmbeddingConfig struct {
 
 // RerankConfig holds reranker model settings.
 type RerankConfig struct {
+	Enabled   *bool  `yaml:"enabled"`
 	Provider  string `yaml:"provider"`
 	Model     string `yaml:"model"`
 	APIKeyEnv string `yaml:"api_key_env"`
@@ -284,6 +285,9 @@ func applyDefaults(cfg *Config) {
 	}
 
 	// Rerank
+	if cfg.Rerank.Enabled != nil && !*cfg.Rerank.Enabled {
+		cfg.Rerank.Provider = "disabled"
+	}
 	if cfg.Rerank.Provider == "" {
 		cfg.Rerank.Provider = "local"
 	}

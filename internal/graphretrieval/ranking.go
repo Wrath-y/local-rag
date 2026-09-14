@@ -147,12 +147,19 @@ func Expand(ctx context.Context, view ReadView, seeds []FusedSeed, request Norma
 		}
 		frontier = next
 	}
-	routes := make([]expansionRoute, 0, len(best))
+	if request.TruncationReasons != nil && len(frontier)>0 {
+  currentIDs:=[]string{};for _,route:=range frontier{currentIDs=append(currentIDs,route.current)}
+  more,e:=view.Adjacency(ctx,currentIDs,graphquery.DirectionOutgoing);if e!=nil{return nil,e}
+  for _,edge:=range more { if !graphquery.MatchesEdge(edge,request.EdgeTypes,request.RelationshipKinds){continue};if _,seen:=best[edge.To];seen{continue}; ns,e:=view.Nodes(ctx,[]string{edge.To});if e!=nil{return nil,e};if len(ns)==1&&graphquery.MatchesNode(ns[0],request.NodeTypes){*request.TruncationReasons=append(*request.TruncationReasons,"GRAPH_DEPTH");break} }
+ }
+ if e:=ctx.Err();e!=nil{return nil,e}
+ routes := make([]expansionRoute, 0, len(best))
 	for _, route := range best {
 		routes = append(routes, route)
 	}
 	sort.Slice(routes, func(i, j int) bool { return routeBetter(routes[i], routes[j]) })
 	if len(routes) > request.ResultLimit {
+		if request.TruncationReasons != nil { *request.TruncationReasons=append(*request.TruncationReasons,"RESULT_LIMIT") }
 		routes = routes[:request.ResultLimit]
 	}
 	result := make([]Result, 0, len(routes))

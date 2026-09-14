@@ -60,15 +60,7 @@ cd local-rag
 ./start.sh
 ```
 
-The script automatically:
-1. Builds the Go binary
-2. Sets up the Python sidecar virtual environment (if using local embedding)
-3. Starts the server
-
-When you see:
-```
-RAG server started (PID: xxxxx) at http://127.0.0.1:8765
-```
+脚本构建 Go 程序并在前台启动服务，健康检查成功时输出 JSON 状态。需要后台运行时使用 `./start.sh --background`。本地模型模式须事先准备 `sidecar/.venv` 中的依赖与模型缓存；启动脚本不会自动安装依赖或下载模型。配置及平台说明见下文“安全生命周期与编排”。
 
 Claude Code picks up the existing `.claude` configuration after restart.
 
@@ -478,8 +470,9 @@ UserPromptSubmit Hook (hook.sh)
 ## Service Management
 
 ```bash
-./start.sh    # Build + start (idempotent)
-./stop.sh     # Stop server
+./start.sh --background    # 显式后台运行，重复启动复用已确认身份的实例
+./status.sh                # 输出 JSON 状态
+./stop.sh                  # 仅停止身份核验通过的受管实例
 
 # Health check
 curl http://127.0.0.1:8765/health
@@ -544,3 +537,24 @@ The Go rewrite offers:
 - 📦 Single binary (no pip install for core)
 - 🔒 SQLite replaces pickle+FAISS+WAL — simpler, more reliable
 - 🏗️ Cleaner architecture with proper interfaces
+
+
+## 安全生命周期与编排
+
+`start.sh` / `start.bat` 默认前台运行；指定 `--background` 才在健康检查成功后返回。`stop.sh` / `stop.bat` 只使用实例文件中核对通过的 PID、内核启动时间和可执行路径，不按名称或端口结束进程。匹配的已运行服务会标为 `external`，停止时保留。并发操作由系统文件锁保护；启动或健康检查失败返回非零，并保留诊断日志。
+
+```sh
+./start.sh --background --config "/path with spaces/config.yaml" \
+  --listen 127.0.0.1:8765 --pid-dir "/path with spaces/run" \
+  --log-dir "/path with spaces/logs" --health-timeout 60s
+./status.sh --pid-dir "/path with spaces/run"
+./stop.sh --pid-dir "/path with spaces/run" --stop-timeout 20s
+```
+
+Windows 使用同名 `.bat` 脚本和相同参数。脚本按自身目录定位，默认相对路径基于仓库根目录；可用 `--workdir` 配置服务工作目录。默认身份文件为 `.run/instance.json`，日志追加到 `logs/rag-server-YYYYMMDD.log`。所有状态输出均为 JSON，含 `schema_version`、`service`、`pid`、`start_time`、`executable`、`process_group`、`ownership`、`state`、`health_url`、`log_path` 和 `started_this_run`。没有实例记录的停止命令幂等成功；检测到 PID 身份变化则保留进程并返回诊断。
+
+主项目编排器可先 `go build -o rag-server ./cmd/server`，再从仓库根目录执行 `rag-server serve --config PATH --listen HOST:PORT`。该模式始终前台运行，退出时等待 HTTP、任务 worker、sidecar 和存储清理。`GET /health` 必须返回 HTTP 200、`service=local-rag`、`schema_version=1.0`、可用的核心能力和依赖；独立控制器还使用随机实例标识校验本轮服务，避免端口争用时误认其他服务的健康响应。
+
+本地嵌入或本地重排任一启用都会启动 sidecar。启动前须显式准备 Python 虚拟环境、依赖与模型缓存；普通启动不会安装依赖或下载模型，缺失时会提示错误。旧配置 `rerank.enabled: false` 现在等价于 `rerank.provider: disabled`。Windows 首次启动构建控制程序，后续复用；更新代码后先停止实例，再执行 `go build -o .run/bin/rag-server.exe ./cmd/server`。macOS/Linux 会在启动前执行 Go 增量构建。
+
+Unix 使用独立进程组、逐次身份核对与 sidecar 父进程存活监测；Windows 使用创建时间、映像路径、控制事件和 Job Object 后代归属。停止不删除数据、日志、配置或模型。Linux/Windows 的编译检查不能替代各自平台上的真实运行验收。

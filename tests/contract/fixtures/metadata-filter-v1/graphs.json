@@ -1,0 +1,1496 @@
+{
+  "schema_version": "metadata_filter_v1",
+  "boundary_order": 2,
+  "scopes": [
+    {
+      "novel_id": "book-a",
+      "branch_id": "book-a-main",
+      "namespace": "book-a-main",
+      "version": "v1",
+      "graph": {
+        "schema_version": "1.0",
+        "nodes": [
+          {
+            "id": "person",
+            "type": "character",
+            "label": "小舟",
+            "text": "alpha 小舟在book-a-main中生还。",
+            "properties": {
+              "novel_id": "book-a",
+              "branch_id": "book-a-main",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "home",
+            "type": "location",
+            "label": "home",
+            "text": "alpha book-a-main中的临江镇。",
+            "properties": {
+              "novel_id": "book-a",
+              "branch_id": "book-a-main",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "rule",
+            "type": "world_rule",
+            "label": "rule",
+            "text": "alpha 硬设定：任何人不能起死回生。",
+            "properties": {
+              "novel_id": "book-a",
+              "branch_id": "book-a-main",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1,
+              "hard_constraint": true
+            },
+            "provenance": {}
+          },
+          {
+            "id": "future",
+            "type": "fact",
+            "label": "future",
+            "text": "alpha 第三章才生效的未来事实。",
+            "properties": {
+              "novel_id": "book-a",
+              "branch_id": "book-a-main",
+              "confirmation": "confirmed",
+              "valid_from_order": 3,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "expired",
+            "type": "fact",
+            "label": "expired",
+            "text": "alpha 已经失效的旧事实。",
+            "properties": {
+              "novel_id": "book-a",
+              "branch_id": "book-a-main",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": 2,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "planned",
+            "type": "fact",
+            "label": "planned",
+            "text": "alpha 尚未确认的计划。",
+            "properties": {
+              "novel_id": "book-a",
+              "branch_id": "book-a-main",
+              "confirmation": "planned",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "foreign",
+            "type": "fact",
+            "label": "foreign",
+            "text": "alpha 不属于当前小说。",
+            "properties": {
+              "novel_id": "foreign-book",
+              "branch_id": "book-a-main",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "foreign-branch",
+            "type": "fact",
+            "label": "foreign-branch",
+            "text": "alpha 不属于当前分支。",
+            "properties": {
+              "novel_id": "book-a",
+              "branch_id": "foreign-branch",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          }
+        ],
+        "edges": [
+          {
+            "id": "edge-0",
+            "from": "person",
+            "to": "home",
+            "type": "related",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {
+              "novel_id": "book-a",
+              "branch_id": "book-a-main",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "edge-1",
+            "from": "home",
+            "to": "rule",
+            "type": "related",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {
+              "novel_id": "book-a",
+              "branch_id": "book-a-main",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "edge-2",
+            "from": "person",
+            "to": "future",
+            "type": "related",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {
+              "novel_id": "book-a",
+              "branch_id": "book-a-main",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "edge-3",
+            "from": "future",
+            "to": "home",
+            "type": "related",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {
+              "novel_id": "book-a",
+              "branch_id": "book-a-main",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "edge-4",
+            "from": "person",
+            "to": "expired",
+            "type": "related",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {
+              "novel_id": "book-a",
+              "branch_id": "book-a-main",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "edge-5",
+            "from": "person",
+            "to": "planned",
+            "type": "related",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {
+              "novel_id": "book-a",
+              "branch_id": "book-a-main",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "edge-6",
+            "from": "person",
+            "to": "foreign",
+            "type": "related",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {
+              "novel_id": "book-a",
+              "branch_id": "book-a-main",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "edge-7",
+            "from": "person",
+            "to": "foreign-branch",
+            "type": "related",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {
+              "novel_id": "book-a",
+              "branch_id": "book-a-main",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "invalid-edge",
+            "from": "person",
+            "to": "home",
+            "type": "related",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {
+              "novel_id": "book-a",
+              "branch_id": "book-a-main",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": 2,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "inferred-edge",
+            "from": "person",
+            "to": "rule",
+            "type": "related",
+            "relation_kind": "inferred",
+            "confidence": 0.5,
+            "properties": {
+              "novel_id": "book-a",
+              "branch_id": "book-a-main",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {
+              "producer": "fixture",
+              "producer_version": "1",
+              "generated_at": "2026-09-14T00:00:00Z",
+              "evidence_refs": [
+                "person"
+              ]
+            }
+          }
+        ]
+      },
+      "allowed_nodes": [
+        "person",
+        "home",
+        "rule"
+      ],
+      "allowed_explicit_edges": [
+        "edge-0",
+        "edge-1"
+      ]
+    },
+    {
+      "novel_id": "book-a",
+      "branch_id": "book-a-fork",
+      "namespace": "book-a-fork",
+      "version": "v1",
+      "graph": {
+        "schema_version": "1.0",
+        "nodes": [
+          {
+            "id": "person",
+            "type": "character",
+            "label": "小舟",
+            "text": "alpha 小舟在book-a-fork中遇难。",
+            "properties": {
+              "novel_id": "book-a",
+              "branch_id": "book-a-fork",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "home",
+            "type": "location",
+            "label": "home",
+            "text": "alpha book-a-fork中的临江镇。",
+            "properties": {
+              "novel_id": "book-a",
+              "branch_id": "book-a-fork",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "rule",
+            "type": "world_rule",
+            "label": "rule",
+            "text": "alpha 硬设定：任何人不能起死回生。",
+            "properties": {
+              "novel_id": "book-a",
+              "branch_id": "book-a-fork",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1,
+              "hard_constraint": true
+            },
+            "provenance": {}
+          },
+          {
+            "id": "future",
+            "type": "fact",
+            "label": "future",
+            "text": "alpha 第三章才生效的未来事实。",
+            "properties": {
+              "novel_id": "book-a",
+              "branch_id": "book-a-fork",
+              "confirmation": "confirmed",
+              "valid_from_order": 3,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "expired",
+            "type": "fact",
+            "label": "expired",
+            "text": "alpha 已经失效的旧事实。",
+            "properties": {
+              "novel_id": "book-a",
+              "branch_id": "book-a-fork",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": 2,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "planned",
+            "type": "fact",
+            "label": "planned",
+            "text": "alpha 尚未确认的计划。",
+            "properties": {
+              "novel_id": "book-a",
+              "branch_id": "book-a-fork",
+              "confirmation": "planned",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "foreign",
+            "type": "fact",
+            "label": "foreign",
+            "text": "alpha 不属于当前小说。",
+            "properties": {
+              "novel_id": "foreign-book",
+              "branch_id": "book-a-fork",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "foreign-branch",
+            "type": "fact",
+            "label": "foreign-branch",
+            "text": "alpha 不属于当前分支。",
+            "properties": {
+              "novel_id": "book-a",
+              "branch_id": "foreign-branch",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          }
+        ],
+        "edges": [
+          {
+            "id": "edge-0",
+            "from": "person",
+            "to": "home",
+            "type": "related",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {
+              "novel_id": "book-a",
+              "branch_id": "book-a-fork",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "edge-1",
+            "from": "home",
+            "to": "rule",
+            "type": "related",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {
+              "novel_id": "book-a",
+              "branch_id": "book-a-fork",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "edge-2",
+            "from": "person",
+            "to": "future",
+            "type": "related",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {
+              "novel_id": "book-a",
+              "branch_id": "book-a-fork",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "edge-3",
+            "from": "future",
+            "to": "home",
+            "type": "related",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {
+              "novel_id": "book-a",
+              "branch_id": "book-a-fork",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "edge-4",
+            "from": "person",
+            "to": "expired",
+            "type": "related",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {
+              "novel_id": "book-a",
+              "branch_id": "book-a-fork",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "edge-5",
+            "from": "person",
+            "to": "planned",
+            "type": "related",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {
+              "novel_id": "book-a",
+              "branch_id": "book-a-fork",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "edge-6",
+            "from": "person",
+            "to": "foreign",
+            "type": "related",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {
+              "novel_id": "book-a",
+              "branch_id": "book-a-fork",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "edge-7",
+            "from": "person",
+            "to": "foreign-branch",
+            "type": "related",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {
+              "novel_id": "book-a",
+              "branch_id": "book-a-fork",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "invalid-edge",
+            "from": "person",
+            "to": "home",
+            "type": "related",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {
+              "novel_id": "book-a",
+              "branch_id": "book-a-fork",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": 2,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "inferred-edge",
+            "from": "person",
+            "to": "rule",
+            "type": "related",
+            "relation_kind": "inferred",
+            "confidence": 0.5,
+            "properties": {
+              "novel_id": "book-a",
+              "branch_id": "book-a-fork",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {
+              "producer": "fixture",
+              "producer_version": "1",
+              "generated_at": "2026-09-14T00:00:00Z",
+              "evidence_refs": [
+                "person"
+              ]
+            }
+          }
+        ]
+      },
+      "allowed_nodes": [
+        "person",
+        "home",
+        "rule"
+      ],
+      "allowed_explicit_edges": [
+        "edge-0",
+        "edge-1"
+      ]
+    },
+    {
+      "novel_id": "book-b",
+      "branch_id": "book-b-main",
+      "namespace": "book-b-main",
+      "version": "v1",
+      "graph": {
+        "schema_version": "1.0",
+        "nodes": [
+          {
+            "id": "person",
+            "type": "character",
+            "label": "小舟",
+            "text": "alpha 小舟在book-b-main中遇难。",
+            "properties": {
+              "novel_id": "book-b",
+              "branch_id": "book-b-main",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "home",
+            "type": "location",
+            "label": "home",
+            "text": "alpha book-b-main中的临江镇。",
+            "properties": {
+              "novel_id": "book-b",
+              "branch_id": "book-b-main",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "rule",
+            "type": "world_rule",
+            "label": "rule",
+            "text": "alpha 硬设定：任何人不能起死回生。",
+            "properties": {
+              "novel_id": "book-b",
+              "branch_id": "book-b-main",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1,
+              "hard_constraint": true
+            },
+            "provenance": {}
+          },
+          {
+            "id": "future",
+            "type": "fact",
+            "label": "future",
+            "text": "alpha 第三章才生效的未来事实。",
+            "properties": {
+              "novel_id": "book-b",
+              "branch_id": "book-b-main",
+              "confirmation": "confirmed",
+              "valid_from_order": 3,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "expired",
+            "type": "fact",
+            "label": "expired",
+            "text": "alpha 已经失效的旧事实。",
+            "properties": {
+              "novel_id": "book-b",
+              "branch_id": "book-b-main",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": 2,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "planned",
+            "type": "fact",
+            "label": "planned",
+            "text": "alpha 尚未确认的计划。",
+            "properties": {
+              "novel_id": "book-b",
+              "branch_id": "book-b-main",
+              "confirmation": "planned",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "foreign",
+            "type": "fact",
+            "label": "foreign",
+            "text": "alpha 不属于当前小说。",
+            "properties": {
+              "novel_id": "foreign-book",
+              "branch_id": "book-b-main",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "foreign-branch",
+            "type": "fact",
+            "label": "foreign-branch",
+            "text": "alpha 不属于当前分支。",
+            "properties": {
+              "novel_id": "book-b",
+              "branch_id": "foreign-branch",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          }
+        ],
+        "edges": [
+          {
+            "id": "edge-0",
+            "from": "person",
+            "to": "home",
+            "type": "related",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {
+              "novel_id": "book-b",
+              "branch_id": "book-b-main",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "edge-1",
+            "from": "home",
+            "to": "rule",
+            "type": "related",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {
+              "novel_id": "book-b",
+              "branch_id": "book-b-main",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "edge-2",
+            "from": "person",
+            "to": "future",
+            "type": "related",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {
+              "novel_id": "book-b",
+              "branch_id": "book-b-main",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "edge-3",
+            "from": "future",
+            "to": "home",
+            "type": "related",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {
+              "novel_id": "book-b",
+              "branch_id": "book-b-main",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "edge-4",
+            "from": "person",
+            "to": "expired",
+            "type": "related",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {
+              "novel_id": "book-b",
+              "branch_id": "book-b-main",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "edge-5",
+            "from": "person",
+            "to": "planned",
+            "type": "related",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {
+              "novel_id": "book-b",
+              "branch_id": "book-b-main",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "edge-6",
+            "from": "person",
+            "to": "foreign",
+            "type": "related",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {
+              "novel_id": "book-b",
+              "branch_id": "book-b-main",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "edge-7",
+            "from": "person",
+            "to": "foreign-branch",
+            "type": "related",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {
+              "novel_id": "book-b",
+              "branch_id": "book-b-main",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "invalid-edge",
+            "from": "person",
+            "to": "home",
+            "type": "related",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {
+              "novel_id": "book-b",
+              "branch_id": "book-b-main",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": 2,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "inferred-edge",
+            "from": "person",
+            "to": "rule",
+            "type": "related",
+            "relation_kind": "inferred",
+            "confidence": 0.5,
+            "properties": {
+              "novel_id": "book-b",
+              "branch_id": "book-b-main",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {
+              "producer": "fixture",
+              "producer_version": "1",
+              "generated_at": "2026-09-14T00:00:00Z",
+              "evidence_refs": [
+                "person"
+              ]
+            }
+          }
+        ]
+      },
+      "allowed_nodes": [
+        "person",
+        "home",
+        "rule"
+      ],
+      "allowed_explicit_edges": [
+        "edge-0",
+        "edge-1"
+      ]
+    },
+    {
+      "novel_id": "book-b",
+      "branch_id": "book-b-fork",
+      "namespace": "book-b-fork",
+      "version": "v1",
+      "graph": {
+        "schema_version": "1.0",
+        "nodes": [
+          {
+            "id": "person",
+            "type": "character",
+            "label": "小舟",
+            "text": "alpha 小舟在book-b-fork中生还。",
+            "properties": {
+              "novel_id": "book-b",
+              "branch_id": "book-b-fork",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "home",
+            "type": "location",
+            "label": "home",
+            "text": "alpha book-b-fork中的临江镇。",
+            "properties": {
+              "novel_id": "book-b",
+              "branch_id": "book-b-fork",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "rule",
+            "type": "world_rule",
+            "label": "rule",
+            "text": "alpha 硬设定：任何人不能起死回生。",
+            "properties": {
+              "novel_id": "book-b",
+              "branch_id": "book-b-fork",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1,
+              "hard_constraint": true
+            },
+            "provenance": {}
+          },
+          {
+            "id": "future",
+            "type": "fact",
+            "label": "future",
+            "text": "alpha 第三章才生效的未来事实。",
+            "properties": {
+              "novel_id": "book-b",
+              "branch_id": "book-b-fork",
+              "confirmation": "confirmed",
+              "valid_from_order": 3,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "expired",
+            "type": "fact",
+            "label": "expired",
+            "text": "alpha 已经失效的旧事实。",
+            "properties": {
+              "novel_id": "book-b",
+              "branch_id": "book-b-fork",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": 2,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "planned",
+            "type": "fact",
+            "label": "planned",
+            "text": "alpha 尚未确认的计划。",
+            "properties": {
+              "novel_id": "book-b",
+              "branch_id": "book-b-fork",
+              "confirmation": "planned",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "foreign",
+            "type": "fact",
+            "label": "foreign",
+            "text": "alpha 不属于当前小说。",
+            "properties": {
+              "novel_id": "foreign-book",
+              "branch_id": "book-b-fork",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "foreign-branch",
+            "type": "fact",
+            "label": "foreign-branch",
+            "text": "alpha 不属于当前分支。",
+            "properties": {
+              "novel_id": "book-b",
+              "branch_id": "foreign-branch",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          }
+        ],
+        "edges": [
+          {
+            "id": "edge-0",
+            "from": "person",
+            "to": "home",
+            "type": "related",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {
+              "novel_id": "book-b",
+              "branch_id": "book-b-fork",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "edge-1",
+            "from": "home",
+            "to": "rule",
+            "type": "related",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {
+              "novel_id": "book-b",
+              "branch_id": "book-b-fork",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "edge-2",
+            "from": "person",
+            "to": "future",
+            "type": "related",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {
+              "novel_id": "book-b",
+              "branch_id": "book-b-fork",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "edge-3",
+            "from": "future",
+            "to": "home",
+            "type": "related",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {
+              "novel_id": "book-b",
+              "branch_id": "book-b-fork",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "edge-4",
+            "from": "person",
+            "to": "expired",
+            "type": "related",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {
+              "novel_id": "book-b",
+              "branch_id": "book-b-fork",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "edge-5",
+            "from": "person",
+            "to": "planned",
+            "type": "related",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {
+              "novel_id": "book-b",
+              "branch_id": "book-b-fork",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "edge-6",
+            "from": "person",
+            "to": "foreign",
+            "type": "related",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {
+              "novel_id": "book-b",
+              "branch_id": "book-b-fork",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "edge-7",
+            "from": "person",
+            "to": "foreign-branch",
+            "type": "related",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {
+              "novel_id": "book-b",
+              "branch_id": "book-b-fork",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "invalid-edge",
+            "from": "person",
+            "to": "home",
+            "type": "related",
+            "relation_kind": "explicit",
+            "confidence": 1,
+            "properties": {
+              "novel_id": "book-b",
+              "branch_id": "book-b-fork",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": 2,
+              "order_revision": 1
+            },
+            "provenance": {}
+          },
+          {
+            "id": "inferred-edge",
+            "from": "person",
+            "to": "rule",
+            "type": "related",
+            "relation_kind": "inferred",
+            "confidence": 0.5,
+            "properties": {
+              "novel_id": "book-b",
+              "branch_id": "book-b-fork",
+              "confirmation": "confirmed",
+              "valid_from_order": 0,
+              "valid_to_order": null,
+              "order_revision": 1
+            },
+            "provenance": {
+              "producer": "fixture",
+              "producer_version": "1",
+              "generated_at": "2026-09-14T00:00:00Z",
+              "evidence_refs": [
+                "person"
+              ]
+            }
+          }
+        ]
+      },
+      "allowed_nodes": [
+        "person",
+        "home",
+        "rule"
+      ],
+      "allowed_explicit_edges": [
+        "edge-0",
+        "edge-1"
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "scope": "book-a-main",
+      "operation": "search",
+      "case": "confirmed",
+      "expected_nodes": [
+        "person",
+        "home",
+        "rule"
+      ]
+    },
+    {
+      "scope": "book-a-main",
+      "operation": "traverse",
+      "case": "outgoing",
+      "expected_nodes": [
+        "person",
+        "home",
+        "rule"
+      ]
+    },
+    {
+      "scope": "book-a-main",
+      "operation": "paths",
+      "case": "person-to-rule",
+      "expected_nodes": [
+        "person",
+        "home",
+        "rule"
+      ]
+    },
+    {
+      "scope": "book-a-main",
+      "operation": "search",
+      "case": "character-type",
+      "expected_nodes": [
+        "person"
+      ]
+    },
+    {
+      "scope": "book-a-main",
+      "operation": "traverse",
+      "case": "limited",
+      "expected_nodes": [
+        "person"
+      ]
+    },
+    {
+      "scope": "book-a-main",
+      "operation": "paths",
+      "case": "future-endpoint",
+      "expected_nodes": []
+    },
+    {
+      "scope": "book-a-fork",
+      "operation": "search",
+      "case": "confirmed",
+      "expected_nodes": [
+        "person",
+        "home",
+        "rule"
+      ]
+    },
+    {
+      "scope": "book-a-fork",
+      "operation": "traverse",
+      "case": "outgoing",
+      "expected_nodes": [
+        "person",
+        "home",
+        "rule"
+      ]
+    },
+    {
+      "scope": "book-a-fork",
+      "operation": "paths",
+      "case": "person-to-rule",
+      "expected_nodes": [
+        "person",
+        "home",
+        "rule"
+      ]
+    },
+    {
+      "scope": "book-a-fork",
+      "operation": "search",
+      "case": "character-type",
+      "expected_nodes": [
+        "person"
+      ]
+    },
+    {
+      "scope": "book-a-fork",
+      "operation": "traverse",
+      "case": "limited",
+      "expected_nodes": [
+        "person"
+      ]
+    },
+    {
+      "scope": "book-a-fork",
+      "operation": "paths",
+      "case": "future-endpoint",
+      "expected_nodes": []
+    },
+    {
+      "scope": "book-b-main",
+      "operation": "search",
+      "case": "confirmed",
+      "expected_nodes": [
+        "person",
+        "home",
+        "rule"
+      ]
+    },
+    {
+      "scope": "book-b-main",
+      "operation": "traverse",
+      "case": "outgoing",
+      "expected_nodes": [
+        "person",
+        "home",
+        "rule"
+      ]
+    },
+    {
+      "scope": "book-b-main",
+      "operation": "paths",
+      "case": "person-to-rule",
+      "expected_nodes": [
+        "person",
+        "home",
+        "rule"
+      ]
+    },
+    {
+      "scope": "book-b-main",
+      "operation": "search",
+      "case": "character-type",
+      "expected_nodes": [
+        "person"
+      ]
+    },
+    {
+      "scope": "book-b-main",
+      "operation": "traverse",
+      "case": "limited",
+      "expected_nodes": [
+        "person"
+      ]
+    },
+    {
+      "scope": "book-b-main",
+      "operation": "paths",
+      "case": "future-endpoint",
+      "expected_nodes": []
+    },
+    {
+      "scope": "book-b-fork",
+      "operation": "search",
+      "case": "confirmed",
+      "expected_nodes": [
+        "person",
+        "home",
+        "rule"
+      ]
+    },
+    {
+      "scope": "book-b-fork",
+      "operation": "traverse",
+      "case": "outgoing",
+      "expected_nodes": [
+        "person",
+        "home",
+        "rule"
+      ]
+    },
+    {
+      "scope": "book-b-fork",
+      "operation": "paths",
+      "case": "person-to-rule",
+      "expected_nodes": [
+        "person",
+        "home",
+        "rule"
+      ]
+    },
+    {
+      "scope": "book-b-fork",
+      "operation": "search",
+      "case": "character-type",
+      "expected_nodes": [
+        "person"
+      ]
+    },
+    {
+      "scope": "book-b-fork",
+      "operation": "traverse",
+      "case": "limited",
+      "expected_nodes": [
+        "person"
+      ]
+    },
+    {
+      "scope": "book-b-fork",
+      "operation": "paths",
+      "case": "future-endpoint",
+      "expected_nodes": []
+    }
+  ]
+}

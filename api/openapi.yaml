@@ -1,8 +1,11 @@
 openapi: 3.0.3
 info:
   title: Local RAG Graph Snapshot Lifecycle API
-  version: 1.0.0
-  description: Namespace-isolated immutable graph snapshot lifecycle endpoints.
+  version: 1.2.0
+  description: >-
+    按 namespace 隔离的不可变图快照生命周期接口。API 1.2.0 新增 namespace_lifecycle_v1，保留图 schema 1.0 的哈希语义；
+    完整图物化、来源校验、空集合、Unicode 和数值规则及固定夹具见
+    [Graph Snapshot Hash Contract](../docs/contracts/graph-snapshot-hash-v1/README.md)。
 paths:
   /v1/graphs/{namespace}/snapshots/{version}:
     parameters:
@@ -35,12 +38,52 @@ paths:
       - $ref: '#/components/parameters/Version'
     post:
       operationId: activateGraphSnapshot
+      description: >-
+        conditional_activation_v1 adds an exact compare-and-swap. An omitted
+        body or omitted expected_active_version retains legacy single-writer
+        activation. Explicit null requires no active snapshot; a string
+        requires that exact head. A stale expectation conflicts even when the
+        requested target is already active. Negotiate the capability before
+        sending a condition; never silently retry without it.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ActivationRequest' }
       responses:
         '200':
           description: Active pointer result
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Activation' }
+        '409':
+          description: ACTIVE_VERSION_CONFLICT or SNAPSHOT_NOT_READY; conflicts are not automatically retryable.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GraphError' }
+        default: { $ref: '#/components/responses/GraphError' }
+  /v1/graphs/{namespace}/active/query:
+    parameters:
+      - $ref: '#/components/parameters/Namespace'
+    post:
+      operationId: queryActiveGraphSnapshot
+      description: >-
+        Read-only operation provided by conditional_activation_v1. Reads the
+        active version and its stored immutable hash atomically. Both are null
+        when no head exists, including an unknown namespace. After an uncertain
+        activation response, reconcile this head with the intended version and
+        hash. Snapshot existence alone is not evidence of activation.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false }
+      responses:
+        '200':
+          description: Namespace head, or explicit null version/hash
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActiveSnapshot' }
         default: { $ref: '#/components/responses/GraphError' }
   /v1/graphs/{namespace}/traverse:
     parameters:
@@ -117,6 +160,73 @@ paths:
       responses:
         '200': { description: Healthy or degraded service, content: { application/json: { schema: { $ref: '#/components/schemas/Health' } } } }
         '503': { description: Core graph storage unavailable, content: { application/json: { schema: { $ref: '#/components/schemas/Health' } } } }
+  /v1/graphs/{namespace}/snapshots/query:
+    parameters:
+      - $ref: '#/components/parameters/Namespace'
+    post:
+      operationId: queryGraphNamespaceSnapshots
+      description: 稳定版本顺序与固定代次分页；新增版本、删除、活动指针或引用变化使旧游标返回 409，不静默漏项。manifest_hash 覆盖整个 namespace，构建状态变化不改变范围。
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/NamespaceQuery' } } }
+      responses:
+        '200': { description: namespace 全范围身份及分页快照, content: { application/json: { schema: { $ref: '#/components/schemas/NamespacePage' } } } }
+        default: { $ref: '#/components/responses/GraphError' }
+  /v1/graphs/{namespace}/references/sync:
+    parameters:
+      - $ref: '#/components/parameters/Namespace'
+    post:
+      operationId: syncGraphNamespaceReferences
+      description: 按 owner 和 expected_revision CAS 替换完整引用集合；初始 revision 为 0；不得改变其他 owner 的保留引用。成功后重新预览删除范围。
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/NamespaceReferenceSync' } } }
+      responses:
+        '200': { description: 新引用代次, content: { application/json: { schema: { $ref: '#/components/schemas/NamespaceReferenceResult' } } } }
+        default: { $ref: '#/components/responses/GraphError' }
+  /v1/graphs/{namespace}/delete:
+    parameters:
+      - $ref: '#/components/parameters/Namespace'
+    post:
+      operationId: deleteGraphNamespace
+      description: 固定代次和 manifest_hash 确认；任何引用阻塞删除。事务记录禁写和任务，已接受构建自然收束，已开始读取完成后清理。保留删除收据、独立备份和日志；同 key 相同载荷复用任务，不同载荷或新 key 返回 409。
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/NamespaceDeleteRequest' } } }
+      responses:
+        '202': { description: 原范围删除任务, content: { application/json: { schema: { $ref: '#/components/schemas/NamespaceDeletionTask' } } } }
+        default: { $ref: '#/components/responses/GraphError' }
+  /v1/namespace-deletion-tasks/{task_id}:
+    parameters:
+      - in: path
+        name: task_id
+        required: true
+        schema: { type: string, minLength: 1 }
+    get:
+      operationId: getGraphNamespaceDeletionTask
+      responses:
+        '200': { description: 持久删除任务，完成后仍可查询, content: { application/json: { schema: { $ref: '#/components/schemas/NamespaceDeletionTask' } } } }
+        default: { $ref: '#/components/responses/GraphError' }
+  /v1/namespace-deletion-tasks/{task_id}/retry:
+    parameters:
+      - in: path
+        name: task_id
+        required: true
+        schema: { type: string, minLength: 1 }
+    post:
+      operationId: retryGraphNamespaceDeletionTask
+      description: 仅恢复原任务及已确认范围；重复重试幂等，complete 保持不变。
+      requestBody:
+        required: false
+        content: { application/json: { schema: { type: object, additionalProperties: false } } }
+      responses:
+        '202': { description: 原任务, content: { application/json: { schema: { $ref: '#/components/schemas/NamespaceDeletionTask' } } } }
+        default: { $ref: '#/components/responses/GraphError' }
 components:
   parameters:
     Namespace: { name: namespace, in: path, required: true, schema: { type: string, minLength: 1 } }
@@ -132,43 +242,144 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/GraphError' }
   schemas:
+    NamespaceQuery:
+      type: object
+      additionalProperties: false
+      properties:
+        cursor: { type: string }
+        limit: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    NamespaceSnapshot:
+      type: object
+      required: [version, content_hash, status, query_ready]
+      properties:
+        version: { type: string }
+        content_hash: { type: string }
+        status: { type: string, enum: [building, ready, failed] }
+        query_ready: { type: boolean }
+    SnapshotReference:
+      type: object
+      additionalProperties: false
+      required: [reference_id, version, kind]
+      properties:
+        owner: { type: string, maxLength: 256 }
+        reference_id: { type: string, minLength: 1, maxLength: 256 }
+        version: { type: string, minLength: 1 }
+        kind: { type: string, minLength: 1, maxLength: 128 }
+    NamespacePage:
+      type: object
+      required: [namespace, items, next_cursor, generation, manifest_hash, active_version, references, reference_revisions, state]
+      properties:
+        namespace: { type: string }
+        items: { type: array, items: { $ref: '#/components/schemas/NamespaceSnapshot' } }
+        next_cursor: { type: string, nullable: true }
+        generation: { type: string, description: 不透明代次，客户端不得自行推算 }
+        manifest_hash: { type: string, pattern: '^[a-f0-9]{64}$' }
+        active_version: { type: string, nullable: true }
+        references: { type: array, items: { $ref: '#/components/schemas/SnapshotReference' } }
+        reference_revisions: { type: object, additionalProperties: { type: integer, minimum: 0 } }
+        state: { type: string, enum: [active, deleting, deleted] }
+    NamespaceReferenceSync:
+      type: object
+      additionalProperties: false
+      required: [owner, expected_revision, references]
+      properties:
+        owner: { type: string, minLength: 1, maxLength: 256 }
+        expected_revision: { type: integer, minimum: 0 }
+        references: { type: array, maxItems: 10000, items: { $ref: '#/components/schemas/SnapshotReference' } }
+    NamespaceReferenceResult:
+      type: object
+      required: [owner, revision, references, generation, manifest_hash]
+      properties:
+        owner: { type: string }
+        revision: { type: integer, minimum: 1 }
+        references: { type: array, items: { $ref: '#/components/schemas/SnapshotReference' } }
+        generation: { type: string }
+        manifest_hash: { type: string }
+    NamespaceDeleteRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_generation, manifest_hash, confirm]
+      properties:
+        expected_generation: { type: string, minLength: 1 }
+        manifest_hash: { type: string, pattern: '^[a-f0-9]{64}$' }
+        confirm: { type: boolean, enum: [true] }
+    NamespaceDeletionTask:
+      type: object
+      required: [task_id, task_kind, namespace, state, phase, status_path, generation, manifest_hash, scope, remaining_artifacts, retained_artifacts, retryable, complete, replayed, created_at, updated_at]
+      properties:
+        task_id: { type: string }
+        task_kind: { type: string, enum: [namespace_delete] }
+        namespace: { type: string }
+        state: { type: string, enum: [pending, draining, complete, failed] }
+        phase: { type: string, enum: [draining, complete] }
+        status_path: { type: string }
+        generation: { type: string }
+        manifest_hash: { type: string }
+        scope: { type: array, items: { $ref: '#/components/schemas/NamespaceSnapshot' } }
+        remaining_artifacts: { type: array, items: { type: string } }
+        retained_artifacts: { type: array, items: { type: string, enum: [independent_backups, service_logs, deletion_receipt] } }
+        retryable: { type: boolean }
+        complete: { type: boolean }
+        replayed: { type: boolean }
+        error_code: { type: string, enum: [NAMESPACE_CLEANUP_FAILED] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
     SnapshotRequest:
+      description: >-
+        请求解码拒绝任何深度的重复对象成员和未知请求或实体字段。
+        hash 覆盖最终完整图，delta 必须先物化；不能直接对请求 JSON 计算 hash。
+        规范与接受边界见 [Graph Snapshot Hash Contract](../docs/contracts/graph-snapshot-hash-v1/README.md)。
       oneOf:
         - $ref: '#/components/schemas/FullSnapshotRequest'
         - $ref: '#/components/schemas/DeltaSnapshotRequest'
     FullSnapshotRequest:
       type: object
-      required: [schema_version, mode, content_hash, nodes, edges]
+      description: >-
+        完整图提交。schema 1.0 将 nodes/edges 的省略、null、空数组统一视为空集合，
+        最终规范图中的空集合序列化为 null。base_version 必须为空；兼容历史长度为零的
+        upsert/delete 字段，非空的 delta 操作字段不允许。
+      required: [schema_version, mode, content_hash]
       properties:
         schema_version: { type: string, enum: ['1.0'] }
         mode: { type: string, enum: [full] }
         content_hash: { $ref: '#/components/schemas/ContentHash' }
-        nodes: { type: array, items: { $ref: '#/components/schemas/Node' } }
-        edges: { type: array, items: { $ref: '#/components/schemas/Edge' } }
+        nodes: { type: array, nullable: true, items: { $ref: '#/components/schemas/Node' } }
+        edges: { type: array, nullable: true, items: { $ref: '#/components/schemas/Edge' } }
     DeltaSnapshotRequest:
       type: object
+      description: >-
+        基于已就绪的固定版本进行完整记录 upsert 和严格 delete。删除 ID 必须存在且不能与
+        同类 upsert 冲突；删除节点不自动删除边，物化后重新检查悬空边及来源。
+        不能包含非空 nodes/edges，空操作数组或 null 与省略等价；基线快照保持不可变。
       required: [schema_version, mode, base_version, content_hash]
       properties:
         schema_version: { type: string, enum: ['1.0'] }
         mode: { type: string, enum: [delta] }
         base_version: { type: string, minLength: 1 }
         content_hash: { $ref: '#/components/schemas/ContentHash' }
-        node_upserts: { type: array, items: { $ref: '#/components/schemas/Node' } }
-        node_deletes: { type: array, items: { type: string } }
-        edge_upserts: { type: array, items: { $ref: '#/components/schemas/Edge' } }
-        edge_deletes: { type: array, items: { type: string } }
+        node_upserts: { type: array, nullable: true, items: { $ref: '#/components/schemas/Node' } }
+        node_deletes: { type: array, nullable: true, items: { type: string } }
+        edge_upserts: { type: array, nullable: true, items: { $ref: '#/components/schemas/Edge' } }
+        edge_deletes: { type: array, nullable: true, items: { type: string } }
     Node:
       type: object
+      description: >-
+        id/type/label/text 必须非空白，但不会修剪原值或规范化 Unicode。
+        properties/provenance 必须显式提供非 null 的 JSON 对象，空对象有效，完整内容参与哈希。
       required: [id, type, label, text, properties, provenance]
       properties:
         id: { type: string }
         type: { type: string }
         label: { type: string }
         text: { type: string }
-        properties: { type: object, additionalProperties: true }
-        provenance: { type: object, additionalProperties: true }
+        properties: { $ref: '#/components/schemas/GraphProperties' }
+        provenance: { $ref: '#/components/schemas/GraphProvenance' }
     Edge:
       type: object
+      description: >-
+        两端 ID 必须存在于最终图。explicit 的 confidence 转换为 binary64 后必须等于 1；
+        inferred 必须位于 [0,1] 且 provenance 包含生产者、版本、RFC3339 生成时间和非空证据。
+        允许的字段别名、优先顺序和数值舍入语义以公开哈希契约为准。
       required: [id, from, to, type, relation_kind, confidence, properties, provenance]
       properties:
         id: { type: string }
@@ -176,9 +387,24 @@ components:
         to: { type: string }
         type: { type: string }
         relation_kind: { type: string, enum: [explicit, inferred] }
-        confidence: { type: number, minimum: 0, maximum: 1 }
-        properties: { type: object, additionalProperties: true }
-        provenance: { type: object, additionalProperties: true }
+        confidence: { type: number, minimum: 0, maximum: 1, description: 必须显式提供有限 binary64 数值；explicit 要求转换后的值等于 1。 }
+        properties: { $ref: '#/components/schemas/GraphProperties' }
+        provenance: { $ref: '#/components/schemas/GraphProvenance' }
+    GraphProperties:
+      type: object
+      nullable: false
+      additionalProperties: true
+      description: >-
+        必须是 JSON 对象；省略、null、数组和标量均无效，空对象有效。
+        对象内部的 null、数组、嵌套对象、布尔值及数值保留并参与规范哈希。
+    GraphProvenance:
+      type: object
+      nullable: false
+      additionalProperties: true
+      description: >-
+        必须是 JSON 对象。Node 和 explicit Edge 接受空对象；inferred Edge 还要求生产者、
+        版本、generated_at 以及非空证据字符串数组。不是仅提供 source 就满足推断来源要求。
+        字段别名及严格规则见 [Graph Snapshot Hash Contract](../docs/contracts/graph-snapshot-hash-v1/README.md)。
     Snapshot:
       type: object
       required: [namespace, version, schema_version, content_hash, node_count, edge_count, task_id, status, query_ready, components, warnings]
@@ -251,7 +477,10 @@ components:
         service_version: { type: string }
         api_versions: { type: array, items: { type: string } }
         supported_schema_versions: { type: array, items: { type: string } }
-        capabilities: { type: array, items: { $ref: '#/components/schemas/HealthState' } }
+        capabilities:
+          type: array
+          description: conditional_activation_v1 must be available before a caller uses expected_active_version or active/query; service_version alone does not establish compatibility.
+          items: { $ref: '#/components/schemas/HealthState' }
         limits: { type: array, items: { $ref: '#/components/schemas/Limit' } }
         dependencies: { type: array, items: { $ref: '#/components/schemas/HealthState' } }
     HealthState:
@@ -270,6 +499,22 @@ components:
       properties:
         name: { type: string }
         value: { type: integer, minimum: 0 }
+    ActivationRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        expected_active_version:
+          type: string
+          nullable: true
+          minLength: 1
+          description: Absent means legacy activation; null requires no active head; string requires an exact match.
+    ActiveSnapshot:
+      type: object
+      required: [namespace, active_version, content_hash]
+      properties:
+        namespace: { type: string }
+        active_version: { type: string, nullable: true, minLength: 1 }
+        content_hash: { type: string, nullable: true, pattern: '^[a-f0-9]{64}$' }
     Activation:
       type: object
       required: [namespace, active_version, changed]
@@ -277,18 +522,49 @@ components:
         namespace: { type: string }
         active_version: { type: string }
         changed: { type: boolean }
-    ContentHash: { type: string, pattern: '^[a-f0-9]{64}$' }
+    ContentHash:
+      type: string
+      pattern: '^[a-f0-9]{64}$'
+      description: >-
+        最终完整图按实体 ID 的 UTF-8 字节序排序，再执行 JCS，计算规范 UTF-8 字节的 SHA-256。
+        空节点/边集合固定编码为 null；namespace/version/mode 不参与哈希。
+        数值保留 schema 1.0 的 binary64 舍入语义，完整规则及固定 hash 见
+        [Graph Snapshot Hash Contract](../docs/contracts/graph-snapshot-hash-v1/README.md)。
     GraphError:
       type: object
       required: [code, message, retryable, details, request_id]
       properties:
         code:
           type: string
-          enum: [INVALID_SNAPSHOT_REQUEST, DUPLICATE_NODE_ID, DUPLICATE_EDGE_ID, DANGLING_EDGE, INVALID_RELATION_PROVENANCE, INVALID_DELTA_OPERATION, BASE_SNAPSHOT_NOT_FOUND, BASE_SNAPSHOT_NOT_READY, CONTENT_HASH_MISMATCH, CONTENT_HASH_CONFLICT, SNAPSHOT_NOT_FOUND, TASK_NOT_FOUND, SNAPSHOT_NOT_READY, ACTIVE_SNAPSHOT_DELETE_FORBIDDEN, SNAPSHOT_WRITE_IN_PROGRESS, INVALID_GRAPH_QUERY, INVALID_RETRIEVAL_REQUEST, INVALID_REBUILD_REQUEST, LIMIT_EXCEEDED, NO_ACTIVE_SNAPSHOT, NODE_NOT_FOUND, GRAPH_STORE_UNAVAILABLE, SNAPSHOT_INDEX_NOT_READY, IDEMPOTENCY_CONFLICT, REIMPORT_REQUIRED, RETRIEVAL_UNAVAILABLE, INTERNAL_ERROR]
+          enum: [INVALID_NAMESPACE_REQUEST, NAMESPACE_GENERATION_CONFLICT, REFERENCE_REVISION_CONFLICT, NAMESPACE_DELETING, SNAPSHOT_REFERENCED, INVALID_SNAPSHOT_REQUEST, DUPLICATE_NODE_ID, DUPLICATE_EDGE_ID, DANGLING_EDGE, INVALID_RELATION_PROVENANCE, INVALID_DELTA_OPERATION, BASE_SNAPSHOT_NOT_FOUND, BASE_SNAPSHOT_NOT_READY, CONTENT_HASH_MISMATCH, CONTENT_HASH_CONFLICT, SNAPSHOT_NOT_FOUND, TASK_NOT_FOUND, SNAPSHOT_NOT_READY, ACTIVE_VERSION_CONFLICT, ACTIVE_SNAPSHOT_DELETE_FORBIDDEN, SNAPSHOT_WRITE_IN_PROGRESS, INVALID_GRAPH_QUERY, INVALID_RETRIEVAL_REQUEST, INVALID_REBUILD_REQUEST, LIMIT_EXCEEDED, NO_ACTIVE_SNAPSHOT, NODE_NOT_FOUND, GRAPH_STORE_UNAVAILABLE, SNAPSHOT_INDEX_NOT_READY, IDEMPOTENCY_CONFLICT, REIMPORT_REQUIRED, RETRIEVAL_UNAVAILABLE, INTERNAL_ERROR]
         message: { type: string, minLength: 1 }
         retryable: { type: boolean }
-        details: { type: object, additionalProperties: true }
+        details:
+          type: object
+          additionalProperties: true
+          description: ACTIVE_VERSION_CONFLICT includes namespace and nullable expected_active_version and active_version from the comparison transaction.
         request_id: { type: string, minLength: 1 }
+    MetadataCondition:
+      type: object
+      additionalProperties: false
+      required: [field, op]
+      description: 字段具有声明类型；区间比较只支持整数与 UTC 秒精度时间。is_null/not_null 不接受非空 value。所有条件总计最多 32 项。
+      properties:
+        field: { type: string, enum: [novel_id, branch_id, confirmation, source_chapter_id, source_version_id, source_asset_id, source_asset_version_id, valid_from_order, valid_to_order, order_revision, hard_constraint, current_state, recorded_at] }
+        op: { type: string, enum: [eq, ne, in, lt, lte, gt, gte, is_null, not_null] }
+        value:
+          oneOf:
+            - { type: string, maxLength: 512 }
+            - { type: integer, minimum: -9007199254740991, maximum: 9007199254740991 }
+            - { type: boolean }
+            - { type: array, minItems: 1, maxItems: 32, items: {} }
+    MetadataFilter:
+      type: object
+      additionalProperties: false
+      description: metadata_filter_v1。All 与各 Any 分组之间为 AND；每个 Any 分组内部为 OR。条件同时覆盖节点与边，缺失属性等同 null，仅 is_null 匹配；其他比较不匹配空值。过滤在召回排序及 LIMIT 前生效，并贯穿扩展与全部证据。必须先协商能力，不能在旧服务上丢弃条件。
+      properties:
+        all: { type: array, maxItems: 32, items: { $ref: '#/components/schemas/MetadataCondition' } }
+        any: { type: array, maxItems: 32, items: { type: array, minItems: 1, maxItems: 32, items: { $ref: '#/components/schemas/MetadataCondition' } } }
     GraphDirection: { type: string, enum: [outgoing, incoming, both], default: outgoing }
     TruncationReason: { type: string, enum: [MAX_DEPTH, MAX_NODES, MAX_PATHS] }
     TraverseRequest:
@@ -296,6 +572,7 @@ components:
       required: [start_node_ids]
       additionalProperties: false
       properties:
+        filters: { $ref: '#/components/schemas/MetadataFilter' }
         snapshot_version: { type: string }
         start_node_ids: { type: array, minItems: 1, items: { type: string, minLength: 1 } }
         direction: { $ref: '#/components/schemas/GraphDirection' }
@@ -309,6 +586,7 @@ components:
       required: [source_node_ids, target_node_ids]
       additionalProperties: false
       properties:
+        filters: { $ref: '#/components/schemas/MetadataFilter' }
         snapshot_version: { type: string }
         source_node_ids: { type: array, minItems: 1, items: { type: string, minLength: 1 } }
         target_node_ids: { type: array, minItems: 1, items: { type: string, minLength: 1 } }
@@ -361,6 +639,7 @@ components:
       required: [query]
       additionalProperties: false
       properties:
+        filters: { $ref: '#/components/schemas/MetadataFilter' }
         query: { type: string, minLength: 1 }
         snapshot_version: { type: string, minLength: 1 }
         node_types: { type: array, minItems: 1, uniqueItems: true, items: { type: string, minLength: 1 } }
@@ -433,6 +712,8 @@ components:
       type: object
       required: [resolved_snapshot_version, content_hash, mode_used, degraded, warnings, rerank, results]
       properties:
+        truncated: { type: boolean }
+        truncation_reasons: { type: array, items: { type: string, enum: [RESULT_LIMIT, GRAPH_DEPTH] } }
         resolved_snapshot_version: { type: string }
         content_hash: { $ref: '#/components/schemas/ContentHash' }
         mode_used: { type: string, enum: [hybrid, bm25_only, vector_only] }

@@ -227,7 +227,14 @@ func (s *Store) AcceptGraphSnapshot(ctx context.Context, accepted graphsnapshot.
 		return graphsnapshot.Snapshot{}, err
 	}
 	defer tx.Rollback()
+	// Keep admission's first statement a write. A preceding SELECT would
+	// upgrade a deferred SQLite read transaction and can fail SQLITE_BUSY while
+	// the build worker commits. Admission triggers check the persisted gate
+	// under this same acquired write lock, including tombstoned identities.
 	if _, err = tx.ExecContext(ctx, `INSERT INTO graph_namespaces(namespace,created_at) VALUES(?,?) ON CONFLICT(namespace) DO NOTHING`, accepted.Namespace, now); err != nil {
+		if strings.Contains(err.Error(), "NAMESPACE_DELETING") {
+			return graphsnapshot.Snapshot{}, namespaceError(graphsnapshot.CodeNamespaceDeleting, map[string]any{"namespace": accepted.Namespace})
+		}
 		return graphsnapshot.Snapshot{}, fmt.Errorf("create graph namespace: %w", err)
 	}
 	var baseVersion any

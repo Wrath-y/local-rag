@@ -1,24 +1,17 @@
 @echo off
-setlocal enabledelayedexpansion
-
+setlocal
 cd /d "%~dp0"
-
-if exist .rag-server.pid (
-    set /p PID=<.rag-server.pid
-    taskkill /PID !PID! /F >nul 2>&1
-    if %errorlevel% equ 0 (
-        echo RAG server stopped ^(PID: !PID!^)
-    ) else (
-        echo Process not running
+rem 生命周期状态和进程身份由跨平台 Go 入口统一处理。
+set "BIN=%~dp0.run\bin\rag-server.exe"
+if not exist "%BIN%" (
+    where go >nul 2>&1
+    if errorlevel 1 (
+        echo 缺少 Go 和生命周期程序，请先准备 Go 工具链。 1>&2
+        exit /b 1
     )
-    del .rag-server.pid
-) else (
-    taskkill /im rag-server.exe /F >nul 2>&1
-    if %errorlevel% equ 0 (
-        echo RAG server stopped
-    ) else (
-        echo No running server found
-    )
+    if not exist "%~dp0.run\bin" mkdir "%~dp0.run\bin"
+    go build -o "%BIN%" ./cmd/server/
+    if errorlevel 1 exit /b 1
 )
-
-endlocal
+"%BIN%" lifecycle stop %*
+exit /b %errorlevel%

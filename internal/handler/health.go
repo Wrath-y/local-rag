@@ -1,14 +1,17 @@
 package handler
 
 import (
+	"github.com/Wrath-y/local-rag/internal/metadatafilter"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/Wrath-y/local-rag/internal/graphquery"
 	"github.com/Wrath-y/local-rag/internal/graphretrieval"
+	"github.com/Wrath-y/local-rag/internal/graphsnapshot"
 	"github.com/Wrath-y/local-rag/internal/observe"
 	"github.com/Wrath-y/local-rag/internal/operability"
+	"github.com/Wrath-y/local-rag/internal/store"
 )
 
 // Health returns a bounded, side-effect-free compatibility document. It never
@@ -45,7 +48,15 @@ func (h *Handler) Health(c *gin.Context) {
 	dependencies = append(dependencies, operability.Dependency{Name: "bm25", State: operability.CapabilityAvailable}, vectorDependency, rerankDependency)
 	graph := graphLimits(h.deps.Config)
 	limits := []operability.Limit{{Name: "snapshot_payload_bytes", Value: graph.maxPayloadBytes}, {Name: "snapshot_nodes", Value: graph.maxNodes}, {Name: "snapshot_edges", Value: graph.maxEdges}, {Name: "traverse_max_depth", Value: graphquery.MaxDepth}, {Name: "traverse_max_nodes", Value: graphquery.MaxNodes}, {Name: "paths_max_paths", Value: graphquery.MaxPaths}, {Name: "retrieval_seed_limit", Value: graphretrieval.MaxSeedLimit}, {Name: "retrieval_result_limit", Value: graphretrieval.MaxResultLimit}, {Name: "retrieval_graph_depth", Value: graphretrieval.MaxGraphDepth}, {Name: "rebuild_components", Value: 3}}
-	document := operability.Registry{Status: status, Capabilities: []operability.Capability{{Name: "snapshot_lifecycle", State: operability.CapabilityAvailable}, {Name: "traverse", State: operability.CapabilityAvailable}, {Name: "paths", State: operability.CapabilityAvailable}, {Name: "task_polling", State: operability.CapabilityAvailable}, {Name: "rebuild", State: operability.CapabilityDegraded}, {Name: "bm25", State: operability.CapabilityAvailable}, {Name: "vector", State: vectorState}}, Limits: limits, Dependencies: dependencies}.Document()
+	conditionalState := operability.CapabilityUnavailable
+	if _, supported := h.graphLifecycle.(GraphConditionalActivation); supported && inputs.CoreGraphQuery == operability.CapabilityAvailable {
+		conditionalState = operability.CapabilityAvailable
+	}
+	namespaceState := operability.CapabilityUnavailable
+	if h.deps.Stores != nil && h.deps.Stores.Store() != nil && h.deps.Stores.Store().GraphUnavailable() == nil {
+		namespaceState = operability.CapabilityAvailable
+	}
+	document := operability.Registry{Status: status, Capabilities: []operability.Capability{{Name: metadatafilter.Capability, State: inputs.CoreGraphQuery}, {Name: store.NamespaceLifecycleCapability, State: namespaceState}, {Name: graphsnapshot.ConditionalActivationCapability, State: conditionalState}, {Name: "snapshot_lifecycle", State: operability.CapabilityAvailable}, {Name: "traverse", State: operability.CapabilityAvailable}, {Name: "paths", State: operability.CapabilityAvailable}, {Name: "task_polling", State: operability.CapabilityAvailable}, {Name: "rebuild", State: operability.CapabilityDegraded}, {Name: "bm25", State: operability.CapabilityAvailable}, {Name: "vector", State: vectorState}}, Limits: limits, Dependencies: dependencies}.Document()
 	code := http.StatusOK
 	if status == operability.HealthUnavailable {
 		code = http.StatusServiceUnavailable

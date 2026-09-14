@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 
 	_ "modernc.org/sqlite"
 	_ "modernc.org/sqlite/vec"
@@ -23,7 +25,9 @@ type Store struct {
 	graphUnavailable error
 	// graphRebuildFailpoint is intentionally unexported and used only by
 	// package tests to prove atomic failure boundaries.
-	graphRebuildFailpoint func(string) error
+	graphRebuildFailpoint         func(string) error
+	namespaceReadLocks            sync.Map
+	graphNamespaceDeleteFailpoint func(string) error
 }
 
 // New opens (or creates) a SQLite database at dbPath, applies pragmas, and
@@ -41,7 +45,15 @@ func newWithGraphMigrations(dbPath string, dims int, migrations []graphMigration
 	}
 
 	// 2. Open the database.
-	db, err := sql.Open("sqlite", dbPath)
+	// database/sql opens additional connections during concurrent worker/API
+	// activity. SQLite busy_timeout and foreign_keys are connection-local;
+	// configure them through the driver's DSN so every pooled connection has
+	// the same admission wait and cascade guarantees.
+	separator := "?"
+	if strings.Contains(dbPath, "?") {
+		separator = "&"
+	}
+	db, err := sql.Open("sqlite", dbPath+separator+"_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)")
 	if err != nil {
 		return nil, fmt.Errorf("store.New: open db: %w", err)
 	}

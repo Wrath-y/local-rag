@@ -20,6 +20,9 @@ type GraphRebuildService interface {
 // RebuildGraphSnapshot accepts explicit, caller-idempotent derived-index work.
 // It never starts work implicitly from reads, health checks, or task polling.
 func (h *Handler) RebuildGraphSnapshot(c *gin.Context) {
+	if !h.namespaceAccessAllowed(c) {
+		return
+	}
 	namespace, version, ok := graphSnapshotIdentity(c)
 	if !ok {
 		return

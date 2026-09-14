@@ -3,6 +3,7 @@ package graphsnapshot
 import (
 	"context"
 	"fmt"
+	"time"
 )
 
 // GraphTaskClaimer is deliberately limited to durable claim operations. The
@@ -14,6 +15,13 @@ type GraphTaskClaimer interface {
 
 type GraphTaskRecovery interface {
 	RecoverGraphTasks(context.Context) error
+}
+
+// GraphTaskFailureRecorder guarantees an unexpected dispatch error cannot
+// strand an accepted writer forever in running. Shutdown retains the running
+// receipt for normal startup recovery instead of inventing a terminal state.
+type GraphTaskFailureRecorder interface {
+	RecordGraphTaskDispatchFailure(context.Context, Task, error) error
 }
 
 type TaskDispatcher func(context.Context, Task) error
@@ -68,7 +76,17 @@ func (s *Service) Start(parent context.Context, dispatch TaskDispatcher) error {
 		for {
 			task, found, err := claimer.ClaimOldestQueuedGraphTask(ctx)
 			if err == nil && found {
-				_ = dispatch(ctx, task)
+				if dispatchErr := dispatch(ctx, task); dispatchErr != nil && ctx.Err() == nil {
+					if recorder, ok := s.repository.(GraphTaskFailureRecorder); ok {
+						for recorder.RecordGraphTaskDispatchFailure(ctx, task, dispatchErr) != nil {
+							select {
+							case <-ctx.Done():
+								return
+							case <-time.After(100 * time.Millisecond):
+							}
+						}
+					}
+				}
 				continue
 			}
 			select {

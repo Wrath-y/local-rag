@@ -22,6 +22,11 @@ func (s *Store) WithRead(ctx context.Context, namespace, requestedVersion string
 	if namespace == "" {
 		return ErrInvalidGraphIdentity
 	}
+	release, err := s.acquireNamespaceRead(ctx, namespace)
+	if err != nil {
+		return err
+	}
+	defer release()
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return fmt.Errorf("%w: begin graph query read: %v", graphquery.ErrStoreUnavailable, err)

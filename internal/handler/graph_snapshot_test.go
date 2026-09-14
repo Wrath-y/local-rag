@@ -73,6 +73,7 @@ func newGraphSnapshotRouter(h *Handler) *gin.Engine {
 	router.GET("/v1/graphs/:namespace/snapshots/:version", h.GetGraphSnapshot)
 	router.GET("/v1/tasks/:task_id", h.GetGraphTask)
 	router.POST("/v1/graphs/:namespace/snapshots/:version/activate", h.ActivateGraphSnapshot)
+	router.POST("/v1/graphs/:namespace/active/query", h.QueryActiveGraphSnapshot)
 	router.DELETE("/v1/graphs/:namespace/snapshots/:version", h.DeleteGraphSnapshot)
 	return router
 }
