@@ -29,8 +29,8 @@ func (s Service) Retrieve(ctx context.Context, namespace string, request Request
 	// provider remains a typed base-stage outcome rather than a hard failure.
 	queryVector, embeddingOutcome := s.Embedder.EmbedQuery(ctx, normalized.Query)
 	var result RetrievalResult
-result.TruncationReasons=[]string{}
-normalized.TruncationReasons=&result.TruncationReasons
+	result.TruncationReasons = []string{}
+	normalized.TruncationReasons = &result.TruncationReasons
 	var bm25Outcome, vectorOutcome StageOutcome
 	err := s.Repository.WithRetrievalRead(ctx, namespace, normalized.SnapshotVersion, func(view ReadView) error {
 		if !normalized.Filters.Empty() {
@@ -80,7 +80,7 @@ normalized.TruncationReasons=&result.TruncationReasons
 	if err != nil {
 		return RetrievalResult{}, mapError(err)
 	}
-result.Truncated=len(result.TruncationReasons)>0
+	result.Truncated = len(result.TruncationReasons) > 0
 	if graphErr := s.applyRerank(ctx, normalized.Query, &result); graphErr != nil {
 		return RetrievalResult{}, graphErr
 	}

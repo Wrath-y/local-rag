@@ -45,9 +45,9 @@ type Filter struct {
 type NormalizedRequest struct {
 	Query string
 	Filter
-	SeedLimit   int
-	ResultLimit int
-	GraphDepth  int
+	SeedLimit         int
+	ResultLimit       int
+	GraphDepth        int
 	TruncationReasons *[]string
 }
 
@@ -162,8 +162,8 @@ type Result struct {
 }
 
 type RetrievalResult struct {
-	Truncated bool `json:"truncated"`
-	TruncationReasons []string `json:"truncation_reasons"`
+	Truncated               bool                `json:"truncated"`
+	TruncationReasons       []string            `json:"truncation_reasons"`
 	ResolvedSnapshotVersion string              `json:"resolved_snapshot_version"`
 	ContentHash             string              `json:"content_hash"`
 	ModeUsed                string              `json:"mode_used"`
