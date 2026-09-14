@@ -5,16 +5,18 @@ import (
 	"errors"
 	"math"
 	"sort"
+	"time"
 
 	"github.com/Wrath-y/local-rag/internal/graphquery"
 	"github.com/Wrath-y/local-rag/internal/graphsnapshot"
 )
 
 type Service struct {
-	Repository    Repository
-	Embedder      EmbeddingAdapter
-	Reranker      RerankAdapter
-	RerankEnabled bool
+	Repository      Repository
+	Embedder        EmbeddingAdapter
+	Reranker        RerankAdapter
+	RerankEnabled   bool
+	ProviderTimeout time.Duration
 }
 
 func (s Service) Retrieve(ctx context.Context, namespace string, request Request) (RetrievalResult, *graphsnapshot.Error) {
@@ -25,9 +27,23 @@ func (s Service) Retrieve(ctx context.Context, namespace string, request Request
 	if s.Repository == nil {
 		return RetrievalResult{}, graphsnapshot.NewError(graphsnapshot.CodeGraphStoreUnavailable, nil, nil)
 	}
-	// Embedding is deliberately before the SQLite read transaction. A missing
-	// provider remains a typed base-stage outcome rather than a hard failure.
-	queryVector, embeddingOutcome := s.Embedder.EmbedQuery(ctx, normalized.Query)
+	// 先固定版本并检查向量代是否可用；缺失向量时不调用故障 Provider。
+	needEmbedding := false
+	if err := s.Repository.WithRetrievalRead(ctx, namespace, normalized.SnapshotVersion, func(view ReadView) error {
+		normalized.SnapshotVersion = view.Version()
+		_, state := view.Generation(StageVector)
+		needEmbedding = state == StageUsed
+		return nil
+	}); err != nil {
+		return RetrievalResult{}, mapError(err)
+	}
+	var queryVector []float32
+	embeddingOutcome := StageUnavailable
+	if needEmbedding {
+		embedCtx, cancel := context.WithTimeout(ctx, s.providerTimeout())
+		queryVector, embeddingOutcome = s.Embedder.EmbedQuery(embedCtx, normalized.Query)
+		cancel()
+	}
 	var result RetrievalResult
 	result.TruncationReasons = []string{}
 	normalized.TruncationReasons = &result.TruncationReasons
@@ -50,7 +66,7 @@ func (s Service) Retrieve(ctx context.Context, namespace string, request Request
 		result.FTSGeneration, result.VectorGeneration = ftsIdentity, vectorIdentity
 		var bm25, vectors []Candidate
 		var readErr error
-		bm25, bm25Outcome, readErr = view.BM25(ctx, normalized.Query, normalized.NodeTypes, normalized.SeedLimit)
+		bm25, bm25Outcome, readErr = view.BM25(ctx, normalized.Query, normalized.NodeTypes, normalized.SeedLimit+1)
 		if readErr != nil {
 			return readErr
 		}
@@ -61,7 +77,7 @@ func (s Service) Retrieve(ctx context.Context, namespace string, request Request
 			if !compatibleEmbeddingIdentity(s.Embedder.Identity, vectorIdentity) {
 				vectorOutcome = StagePermanentFailure
 			} else {
-				vectors, vectorOutcome, readErr = view.Vector(ctx, queryVector, normalized.NodeTypes, normalized.SeedLimit)
+				vectors, vectorOutcome, readErr = view.Vector(ctx, queryVector, normalized.NodeTypes, normalized.SeedLimit+1)
 				if readErr != nil {
 					return readErr
 				}
@@ -73,6 +89,15 @@ func (s Service) Retrieve(ctx context.Context, namespace string, request Request
 		result.ModeUsed = modeFor(bm25Outcome, vectorOutcome)
 		result.Warnings = stageWarnings(bm25Outcome, vectorOutcome, StageSkipped)
 		result.Degraded = len(result.Warnings) > 0
+		if len(bm25) > normalized.SeedLimit || len(vectors) > normalized.SeedLimit {
+			result.TruncationReasons = append(result.TruncationReasons, "SEED_LIMIT")
+		}
+		if len(bm25) > normalized.SeedLimit {
+			bm25 = bm25[:normalized.SeedLimit]
+		}
+		if len(vectors) > normalized.SeedLimit {
+			vectors = vectors[:normalized.SeedLimit]
+		}
 		seeds := Fuse(bm25, vectors, normalized.SeedLimit)
 		result.Results, readErr = Expand(ctx, view, seeds, normalized)
 		return readErr
@@ -139,7 +164,9 @@ func (s Service) applyRerank(ctx context.Context, query string, result *Retrieva
 	for i := range result.Results {
 		documents[i] = result.Results[i].CitationText
 	}
-	output, outcome := s.Reranker.Rerank(ctx, query, documents)
+	rerankCtx, cancel := context.WithTimeout(ctx, s.providerTimeout())
+	defer cancel()
+	output, outcome := s.Reranker.Rerank(rerankCtx, query, documents)
 	result.Rerank = outcome
 	if outcome == StageUsed && validRerankOutput(output, len(result.Results)) {
 		for _, item := range output {
@@ -199,4 +226,11 @@ func mapError(err error) *graphsnapshot.Error {
 	default:
 		return graphsnapshot.NewError(graphsnapshot.CodeInternalError, nil, err)
 	}
+}
+
+func (s Service) providerTimeout() time.Duration {
+	if s.ProviderTimeout > 0 {
+		return s.ProviderTimeout
+	}
+	return 3 * time.Second
 }

@@ -24,6 +24,7 @@ const (
 	MaxNodes        = 500
 	DefaultMaxPaths = 20
 	MaxPaths        = 100
+	MaxWorkItems    = 50000
 )
 
 type Direction string
@@ -37,9 +38,10 @@ const (
 type TruncationReason string
 
 const (
-	MaxDepthReached TruncationReason = "MAX_DEPTH"
-	MaxNodesReached TruncationReason = "MAX_NODES"
-	MaxPathsReached TruncationReason = "MAX_PATHS"
+	MaxDepthReached     TruncationReason = "MAX_DEPTH"
+	MaxNodesReached     TruncationReason = "MAX_NODES"
+	MaxPathsReached     TruncationReason = "MAX_PATHS"
+	MaxWorkItemsReached TruncationReason = "MAX_WORK_ITEMS"
 )
 
 var (
@@ -176,6 +178,9 @@ func NormalizeTraverse(request TraverseRequest) (NormalizedTraverse, *graphsnaps
 	limit, graphErr := normalizedLimit("max_nodes", request.MaxNodes, DefaultMaxNodes, MaxNodes)
 	if graphErr != nil {
 		return NormalizedTraverse{}, graphErr
+	}
+	if len(ids) > limit {
+		return NormalizedTraverse{}, graphsnapshot.NewError(graphsnapshot.CodeLimitExceeded, map[string]any{"field": "start_node_ids", "max": limit}, nil)
 	}
 	return NormalizedTraverse{Filter: filter, StartNodeIDs: ids, MaxNodes: limit}, nil
 }

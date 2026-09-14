@@ -96,6 +96,7 @@ func Expand(ctx context.Context, view ReadView, seeds []FusedSeed, request Norma
 			best[seed.NodeID] = route
 		}
 	}
+	work := 0
 	for depth := 0; depth < request.GraphDepth && len(frontier) > 0 && ctx.Err() == nil; depth++ {
 		currentIDs := map[string]struct{}{}
 		for _, route := range frontier {
@@ -113,11 +114,19 @@ func Expand(ctx context.Context, view ReadView, seeds []FusedSeed, request Norma
 		}
 		provisional := []expansionRoute{}
 		candidateIDs := map[string]struct{}{}
+	routeLoop:
 		for _, route := range frontier {
 			for _, edge := range byFrom[route.current] {
 				neighbor, ok := graphquery.NeighborFor(edge, route.current, graphquery.DirectionOutgoing)
 				if !ok || containsID(route.nodeIDs, neighbor) {
 					continue
+				}
+				work++
+				if work > graphquery.MaxWorkItems {
+					if request.TruncationReasons != nil {
+						*request.TruncationReasons = append(*request.TruncationReasons, "MAX_WORK_ITEMS")
+					}
+					break routeLoop
 				}
 				confidence := route.confidence
 				if parsed, parseErr := edge.Confidence.Float64(); parseErr == nil && parsed < confidence {
@@ -146,6 +155,9 @@ func Expand(ctx context.Context, view ReadView, seeds []FusedSeed, request Norma
 			next = append(next, route)
 		}
 		frontier = next
+		if work > graphquery.MaxWorkItems {
+			break
+		}
 	}
 	if request.TruncationReasons != nil && len(frontier) > 0 {
 		currentIDs := []string{}

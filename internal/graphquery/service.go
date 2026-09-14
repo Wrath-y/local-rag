@@ -236,6 +236,8 @@ func paths(ctx context.Context, view ReadView, request NormalizedPaths) PathsRes
 			candidates = append(candidates, Path{SourceNodeID: source, TargetNodeID: source, NodeIDs: []string{source}, EdgeIDs: []string{}, Confidence: 1})
 		}
 	}
+	work := 0
+searchLoop:
 	for depth := 0; depth < request.MaxDepth && len(frontier) > 0 && ctx.Err() == nil; depth++ {
 		byCurrent := map[string][]pathState{}
 		for _, state := range frontier {
@@ -275,6 +277,12 @@ func paths(ctx context.Context, view ReadView, request NormalizedPaths) PathsRes
 					if _, endpoint := targets[neighbor]; !endpoint && !matchesNode(nodeRecords[0], request.NodeTypes) {
 						continue
 					}
+					work++
+					if work > MaxWorkItems {
+						result.Truncated = true
+						result.TruncationReasons = append(result.TruncationReasons, MaxWorkItemsReached)
+						break searchLoop
+					}
 					newVisited := make(map[string]struct{}, len(state.visited)+1)
 					for id := range state.visited {
 						newVisited[id] = struct{}{}
@@ -311,6 +319,26 @@ func paths(ctx context.Context, view ReadView, request NormalizedPaths) PathsRes
 		result.TruncationReasons = append(result.TruncationReasons, MaxPathsReached)
 		candidates = candidates[:request.MaxPaths]
 	}
+	bounded := []Path{}
+	seenNodes := map[string]bool{}
+	for _, p := range candidates {
+		newIDs := []string{}
+		for _, id := range p.NodeIDs {
+			if !seenNodes[id] {
+				newIDs = append(newIDs, id)
+			}
+		}
+		if len(seenNodes)+len(newIDs) > MaxNodes {
+			result.Truncated = true
+			result.TruncationReasons = append(result.TruncationReasons, MaxNodesReached)
+			break
+		}
+		for _, id := range newIDs {
+			seenNodes[id] = true
+		}
+		bounded = append(bounded, p)
+	}
+	candidates = bounded
 	result.Paths = candidates
 	nodeIDs, edgeIDs := []string{}, []string{}
 	for _, path := range candidates {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/Wrath-y/local-rag/internal/graphquery"
@@ -106,5 +107,75 @@ func TestMetadataCandidatePushdownAndAllEvidence(t *testing.T) {
 		if _, ge = g.Paths(ctx, ns, graphquery.PathsRequest{SnapshotVersion: "v1", SourceNodeIDs: []string{"a-future"}, TargetNodeIDs: []string{"y-good"}, Filters: f}); ge == nil {
 			t.Fatal("未来端点未拒绝")
 		}
+	}
+}
+
+func TestMetadataSQLParityAndSnapshotQueryPlan(t *testing.T) {
+	s, e := New(t.TempDir()+"/rag.db", 2)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer s.Close()
+	for _, c := range []metadatafilter.Condition{{Field: "valid_from_order", Op: "lte", Value: 2}, {Field: "valid_to_order", Op: "is_null"}, {Field: "hard_constraint", Op: "eq", Value: false}, {Field: "confirmation", Op: "in", Value: []any{"confirmed", "inferred"}}, {Field: "recorded_at", Op: "gte", Value: "2026-09-14T00:00:00Z"}} {
+		f := metadatafilter.Filter{All: []metadatafilter.Condition{c}}
+		clause, args, e := f.SQL("node.properties_json")
+		if e != nil {
+			t.Fatal(e)
+		}
+		for _, raw := range []string{`{}`, `{"valid_from_order":"2","hard_constraint":0}`, `{"valid_from_order":2.0,"hard_constraint":false,"confirmation":"confirmed","recorded_at":"2026-09-14T00:00:00Z"}`, `{"valid_to_order":null,"recorded_at":"not-a-date"}`, `{"valid_from_order":3,"confirmation":true}`} {
+			var got bool
+			params := append([]any{raw}, args...)
+			e = s.DB().QueryRow("SELECT EXISTS(SELECT 1 FROM (SELECT ? AS properties_json) AS node WHERE 1=1"+clause+")", params...).Scan(&got)
+			if e != nil {
+				t.Fatal(e)
+			}
+			if got != f.Matches(json.RawMessage(raw)) {
+				t.Fatalf("SQL 与图过滤不一致：%+v %s", c, raw)
+			}
+		}
+	}
+	f := metadatafilter.Filter{All: []metadatafilter.Condition{{Field: "confirmation", Op: "eq", Value: "confirmed"}}}
+	clause, args, _ := f.SQL("node.properties_json")
+	rows, e := s.DB().Query("EXPLAIN QUERY PLAN SELECT node_id FROM graph_nodes AS node WHERE namespace=? AND version=?"+clause, append([]any{"book", "v1"}, args...)...)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer rows.Close()
+	indexed := false
+	for rows.Next() {
+		var id, parent, unused int
+		var detail string
+		if e = rows.Scan(&id, &parent, &unused, &detail); e != nil {
+			t.Fatal(e)
+		}
+		t.Log(detail)
+		if strings.Contains(detail, "SEARCH") && strings.Contains(detail, "namespace=? AND version=?") {
+			indexed = true
+		}
+	}
+	if !indexed {
+		t.Fatal("查询未使用已有 namespace/version 索引")
+	}
+}
+
+func TestNaturalLanguageFTSDoesNotInterpretOperators(t *testing.T) {
+	s, e := New(t.TempDir()+"/rag.db", 2)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer s.Close()
+	putReadyRetrievalSnapshot(t, s, "book", "v1", "task")
+	e = s.WithRetrievalRead(context.Background(), "book", "v1", func(v graphretrieval.ReadView) error {
+		result, _, e := v.BM25(context.Background(), `alpha " OR ( - ?`, nil, 10)
+		if e != nil {
+			return e
+		}
+		if len(result) != 1 || result[0].NodeID != "node-a" {
+			t.Fatal(result)
+		}
+		return nil
+	})
+	if e != nil {
+		t.Fatal(e)
 	}
 }

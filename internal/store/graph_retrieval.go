@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"github.com/Wrath-y/local-rag/internal/metadatafilter"
+	"strings"
+	"unicode"
 
 	"github.com/Wrath-y/local-rag/internal/graphquery"
 	"github.com/Wrath-y/local-rag/internal/graphretrieval"
@@ -152,7 +154,7 @@ FROM graph_search_fts
 JOIN graph_search_documents AS document ON document.id=graph_search_fts.rowid
 JOIN graph_nodes AS node ON node.namespace=document.namespace AND node.version=document.version AND node.node_id=document.entity_id
 WHERE graph_search_fts MATCH ? AND document.namespace=? AND document.version=? AND document.generation=? AND document.entity_kind='node'`
-	args := []any{query, v.namespace, v.version, identity.Generation}
+	args := []any{literalGraphQuery(query), v.namespace, v.version, identity.Generation}
 	statement, args = graphRetrievalNodeTypeFilter(statement, args, nodeTypes, "node.node_type")
 	clause, values, filterErr := v.filters.SQL("node.properties_json")
 	if filterErr != nil {
@@ -245,4 +247,16 @@ func graphRetrievalNodeTypeFilter(statement string, args []any, nodeTypes []stri
 		args = append(args, nodeType)
 	}
 	return statement + ` AND ` + column + ` IN (` + joinMarks(marks) + `)`, args
+}
+
+// 用户查询是自然语言，不解释 FTS 操作符或带标点的列名表达式。
+func literalGraphQuery(query string) string {
+	terms := strings.FieldsFunc(query, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsNumber(r) })
+	if len(terms) == 0 {
+		return `""`
+	}
+	for i := range terms {
+		terms[i] = `"` + terms[i] + `"`
+	}
+	return strings.Join(terms, " OR ")
 }

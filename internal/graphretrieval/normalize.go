@@ -2,6 +2,7 @@ package graphretrieval
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"github.com/Wrath-y/local-rag/internal/graphsnapshot"
 )
@@ -19,7 +20,7 @@ func Normalize(request Request) (NormalizedRequest, *graphsnapshot.Error) {
 		return NormalizedRequest{}, invalid("filters")
 	}
 	query := strings.TrimSpace(request.Query)
-	if query == "" {
+	if query == "" || utf8.RuneCountInString(query) > 4000 {
 		return NormalizedRequest{}, invalid("query")
 	}
 	filter, graphErr := normalizeFilter(request)
